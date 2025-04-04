@@ -19,7 +19,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.3p-logistics.3pldoorapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,6 +30,10 @@
         "projectId": "8b65eefb-7452-4eb8-bf23-84b9641828ce"
       }
     },
-    "owner": "giselle345-org"
+    "owner": "giselle345-org",
+    "plugins": [
+      "expo-font",
+      "expo-barcode-scanner"
+    ]
   }
 }
