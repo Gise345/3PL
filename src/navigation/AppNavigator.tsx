@@ -14,7 +14,8 @@ import HomeScreen from '../screens/home/HomeScreen';
 
 // Inbound screens - these will be implemented later
 import InboundScreen from '../screens/inbound/InboundScreen';
-import UnknownInboundScreen from '../screens/inbound/UnkownInboundScreen';
+import InboundDetailScreen from '../screens/inbound/InboundDetailScreen';
+import UnknownInboundScreen from '../screens/inbound/UnknownInboundScreen';
 
 // Outbound screens - these will be implemented later
 import CarrierOutboundScreen from '../screens/outbound/CarrierOutboundScreen';
@@ -64,8 +65,8 @@ const AppNavigator = () => {
             
             {/* Inbound Screens */}
             <Stack.Screen name="Inbound" component={InboundScreen} />
-            <Stack.Screen name="UnknownInbound" component={UnknownInboundScreen} />
-            
+            <Stack.Screen name="InboundDetail" component={InboundDetailScreen} />
+            <Stack.Screen name="UnknownInbound" component={UnknownInboundScreen} />            
             {/* Outbound Screens */}
             <Stack.Screen name="CarrierOutbound" component={CarrierOutboundScreen} />
             <Stack.Screen name="AdHocOutbound" component={AdHocOutboundScreen} />

@@ -1,13 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  Alert, 
+  FlatList, 
+  TouchableOpacity, 
+  ActivityIndicator,
+  Animated,
+  Platform,
+  ScrollView,
+  StatusBar
+} from 'react-native';
 import { Page, Button, Input } from '../../components/common';
-import { colors, typography, spacing } from '../../utils/theme';
-import { palletService, PalletType, Pallet, PalletStu } from '../../api/palletService';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Clipboard } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { palletService, PalletType, Pallet, PalletStu } from '../../api/palletService';
+
+// Define modern color palette with teal primary color to match other screens
+const COLORS = {
+  background: '#F5F7FA',
+  card: '#FFFFFF',
+  cardActive: '#F0F9F6',
+  primary: '#00A9B5', // Teal color matching login screen
+  secondary: '#333333',
+  accent: '#ff6f00',
+  text: '#333333',
+  textLight: '#888888',
+  border: '#E0E0E0',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  error: '#ff3b30',
+  success: '#4CD964',
+  surface: '#F5F7FA',
+  inputBackground: '#F5F7FA',
+};
 
 const PalletConsolidationScreen: React.FC = () => {
+  // State management
   const [loading, setLoading] = useState(false);
   const [palletTypes, setPalletTypes] = useState<PalletType[]>([]);
   const [activePallet, setActivePallet] = useState<Pallet | null>(null);
@@ -16,12 +47,37 @@ const PalletConsolidationScreen: React.FC = () => {
   const [palletHeight, setPalletHeight] = useState('');
   const [palletIdInput, setPalletIdInput] = useState('');
   const [palletIdError, setPalletIdError] = useState('');
+  
+  // Animation values
+  const [fadeIn] = useState(new Animated.Value(0));
+  const [slideUp] = useState(new Animated.Value(30));
+  const [titleScale] = useState(new Animated.Value(0.95));
 
   useEffect(() => {
     fetchPalletTypes();
+    
+    // Animate components on mount
+    Animated.parallel([
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideUp, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(titleScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, []);
 
-   const fetchPalletTypes = async () => {
+  const fetchPalletTypes = async () => {
     try {
       setLoading(true);
       const data = await palletService.getPalletTypes();
@@ -33,7 +89,6 @@ const PalletConsolidationScreen: React.FC = () => {
       setLoading(false);
     }
   };
-  
 
   const handleCreatePallet = async (palletTypeId: number) => {
     try {
@@ -43,7 +98,13 @@ const PalletConsolidationScreen: React.FC = () => {
         description: 'New Pallet'
       });
       setActivePallet(newPallet);
-      Alert.alert('Success', `Pallet #${newPallet.id} created`);
+      
+      // Success notification
+      Alert.alert(
+        'Success', 
+        `Pallet #${newPallet.id} created successfully`,
+        [{ text: 'OK' }]
+      );
     } catch (error) {
       Alert.alert('Error', 'Failed to create pallet');
     } finally {
@@ -56,7 +117,6 @@ const PalletConsolidationScreen: React.FC = () => {
     setPalletIdError('');
     
     if (palletTypes.length === 0) {
-      // Only use the alert for immediate visibility
       Alert.alert('Error', 'Please select a pallet size first');
       return;
     }
@@ -70,16 +130,19 @@ const PalletConsolidationScreen: React.FC = () => {
       setLoading(true);
       const pallet = await palletService.getPallet(palletIdInput);
       if (pallet.closed) {
-        Alert.alert('Pallet Closed', 'Would you like to reopen it?', [
-          { text: 'Cancel' },
-          { text: 'Reopen', onPress: () => handleReopenPallet(pallet.id) }
-        ]);
+        Alert.alert(
+          'Pallet Closed', 
+          'This pallet is closed. Would you like to reopen it?', 
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Reopen', onPress: () => handleReopenPallet(pallet.id) }
+          ]
+        );
       } else {
         setActivePallet(pallet);
       }
     } catch (error) {
-      // Only use a simple alert instead of setting an error in the input
-      Alert.alert('Error', 'Invalid Pallet ID');
+      setPalletIdError('Invalid Pallet ID');
     } finally {
       setLoading(false);
     }
@@ -102,7 +165,13 @@ const PalletConsolidationScreen: React.FC = () => {
   };
 
   const handleAddStu = async () => {
-    if (!stuId.trim() || !activePallet) return;
+    // Clear error first
+    setStuError('');
+    
+    if (!stuId.trim() || !activePallet) {
+      setStuError('STU ID cannot be empty');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -142,7 +211,12 @@ const PalletConsolidationScreen: React.FC = () => {
   };
   
   const handleFinishPallet = async () => {
-    if (!activePallet || !palletHeight) return;
+    if (!activePallet) return;
+    
+    if (!palletHeight.trim()) {
+      Alert.alert('Validation Error', 'Please enter pallet height');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -156,8 +230,8 @@ const PalletConsolidationScreen: React.FC = () => {
       // Get final summary
       const summary = await palletService.getPalletSummary(activePallet.id);
       Alert.alert(
-        'Pallet Closed',
-        `Weight: ${summary.pallet_weight.toFixed(2)}kg\nHeight: ${palletHeight}cm`,
+        'Pallet Closed Successfully',
+        `Pallet ID: ${activePallet.id}\nWeight: ${summary.pallet_weight.toFixed(2)}kg\nHeight: ${palletHeight}cm`,
         [{ text: 'OK', onPress: () => setActivePallet(null) }]
       );
     } catch (error) {
@@ -249,10 +323,14 @@ const PalletConsolidationScreen: React.FC = () => {
     }
   };
 
-  // Render pallet type buttons in a more mobile-friendly way
+  // Render pallet type buttons in a modern styled way
   const renderPalletTypeButtons = () => {
     if (palletTypes.length === 0) {
-      return <Text style={styles.emptyText}>No pallet types available</Text>;
+      return (
+        <View style={styles.emptyStateContainer}>
+          <Text style={styles.emptyText}>No pallet types available</Text>
+        </View>
+      );
     }
     
     return (
@@ -262,7 +340,9 @@ const PalletConsolidationScreen: React.FC = () => {
             key={type.id}
             style={styles.palletTypeButton}
             onPress={() => handleCreatePallet(type.id)}
+            activeOpacity={0.7}
           >
+            <Text style={styles.palletTypeEmoji}>📦</Text>
             <Text style={styles.palletTypeText}>{type.pallet_size}</Text>
           </TouchableOpacity>
         ))}
@@ -271,189 +351,314 @@ const PalletConsolidationScreen: React.FC = () => {
   };
 
   return (
-    <Page style={styles.container}>
-      {!activePallet ? (
-        <>
-          <Text style={styles.title}>Pallet Consolidation</Text>
-          
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Select a pallet size to generate a pallet</Text>
-            {loading ? (
-              <ActivityIndicator size="large" color={colors.primary} />
-            ) : (
-              renderPalletTypeButtons()
-            )}
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollViewContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View 
+          style={[
+            styles.container,
+            { 
+              opacity: fadeIn,
+              transform: [{ translateY: slideUp }]
+            }
+          ]}
+        >
+          {!activePallet ? (
+            // Select or Load Pallet View
+            <>
+              <Animated.View style={{ transform: [{ scale: titleScale }] }}>
+                <Text style={styles.headerTitle}>
+                  <Text style={styles.headerTitleText}>Pallet </Text>
+                  <Text style={[styles.headerTitleText, styles.headerTitleAccent]}>Consolidation</Text>
+                </Text>
+              </Animated.View>
 
-          <View style={styles.divider} />
+              <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Create New Pallet</Text>
+                <Text style={styles.sectionDescription}>Select a pallet size to generate a new pallet</Text>
+                
+                {loading && !palletTypes.length ? (
+                  <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
+                ) : (
+                  renderPalletTypeButtons()
+                )}
+              </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Load Existing Pallet</Text>
-            <View style={styles.inputRow}>
-              <Input
-                value={palletIdInput}
-                onChangeText={(text) => {
-                  setPalletIdInput(text);
-                  // Clear error when user types
-                  if (palletIdError) setPalletIdError('');
-                }}
-                placeholder="Enter Pallet ID"
-                error={palletIdError}
-                containerStyle={styles.input}
-              />
-              <Button
-                title="LOAD PALLET"
-                onPress={handleLoadPallet}
-                style={styles.loadButton}
-              />
-            </View>
-            {palletIdError ? (
-              <Text style={styles.errorText}>{palletIdError}</Text>
-            ) : null}
-          </View>
-        </>
-      ) : (
-        <>
-          <View style={styles.header}>
-            <Text style={styles.title}>Pallet #{activePallet.id}</Text>
-            <Button
-              title="← Back"
-              onPress={() => setActivePallet(null)}
-              style={styles.backButton}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Add STU to Pallet</Text>
-            <View style={styles.inputRow}>
-              <Input
-                value={stuId}
-                onChangeText={setStuId}
-                placeholder="Scan or enter STU ID"
-                error={stuError}
-                containerStyle={styles.input}
-              />
-              <Button
-                title="ADD STU TO PALLET"
-                onPress={handleAddStu}
-                style={styles.addButton}
-              />
-            </View>
-
-            {activePallet.palletStus && activePallet.palletStus.length > 0 && (
-              <>
-                <View style={styles.stuTable}>
-                  <View style={styles.tableHeader}>
-                    <Text style={styles.headerCell}>STU ID</Text>
-                    <Text style={styles.headerCell}>Order Number</Text>
-                    <Text style={styles.headerCell}></Text>
-                  </View>
-                  <FlatList
-                    data={activePallet.palletStus}
-                    keyExtractor={item => item.id.toString()}
-                    renderItem={({ item }) => (
-                      <View style={styles.tableRow}>
-                        <Text style={styles.cell}>{item.stu_id}</Text>
-                        <Text style={styles.cell}>{item.order_number}</Text>
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={() => handleRemoveStu(item.id)}
-                        >
-                          <Text style={styles.deleteIcon}>×</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
+              <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Load Existing Pallet</Text>
+                <Text style={styles.sectionDescription}>Enter a pallet ID to load an existing pallet</Text>
+                
+                <View style={styles.inputRow}>
+                  <Input
+                    value={palletIdInput}
+                    onChangeText={(text) => {
+                      setPalletIdInput(text);
+                      // Clear error when user types
+                      if (palletIdError) setPalletIdError('');
+                    }}
+                    placeholder="Enter Pallet ID"
+                    error={palletIdError}
+                    containerStyle={styles.input}
+                    inputStyle={styles.inputField}
+                  />
+                  <Button
+                    title="LOAD"
+                    onPress={handleLoadPallet}
+                    style={styles.loadButton}
                   />
                 </View>
+              </View>
+            </>
+          ) : (
+            // Active Pallet View
+            <>
+              <View style={styles.header}>
+                <Text style={styles.palletInfoTitle}>
+                  Pallet #{activePallet.id}
+                </Text>
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => setActivePallet(null)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backButtonText}>← Back</Text>
+                </TouchableOpacity>
+              </View>
 
-                {/* Export options - only shown when STUs have been added */}
-                <View style={styles.exportSection}>
-                  <Text style={styles.sectionTitle}>Export Options</Text>
-                  <View style={styles.exportButtonsContainer}>
-                    <Button
-                      title="Export as Excel"
-                      onPress={exportToExcel}
-                      style={styles.exportButton}
+              <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Add STU to Pallet</Text>
+                <Text style={styles.sectionDescription}>Scan or enter a STU ID to add to this pallet</Text>
+                
+                <View style={styles.inputRow}>
+                  <Input
+                    value={stuId}
+                    onChangeText={(text) => {
+                      setStuId(text);
+                      if (stuError) setStuError('');
+                    }}
+                    placeholder="Scan or enter STU ID"
+                    error={stuError}
+                    containerStyle={styles.input}
+                    inputStyle={styles.inputField}
+                  />
+                  <Button
+                    title="ADD"
+                    onPress={handleAddStu}
+                    style={styles.addButton}
+                  />
+                </View>
+              </View>
+
+              {activePallet.palletStus && activePallet.palletStus.length > 0 ? (
+                <>
+                  <View style={styles.card}>
+                    <View style={styles.stuHeaderRow}>
+                      <Text style={styles.sectionTitle}>STU List</Text>
+                      <Text style={styles.stuCount}>
+                        {activePallet.palletStus.length} {activePallet.palletStus.length === 1 ? 'item' : 'items'}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.stuTable}>
+                      <View style={styles.tableHeader}>
+                        <Text style={styles.headerCell}>STU ID</Text>
+                        <Text style={styles.headerCell}>Order #</Text>
+                        <Text style={[styles.headerCell, styles.actionCell]}></Text>
+                      </View>
+                      
+                      {activePallet.palletStus.map((item) => (
+                        <View key={item.id.toString()} style={styles.tableRow}>
+                          <Text style={styles.cell}>{item.stu_id}</Text>
+                          <Text style={styles.cell}>{item.order_number || '-'}</Text>
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => handleRemoveStu(item.id)}
+                          >
+                            <Text style={styles.deleteIcon}>×</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>Export Options</Text>
+                    <Text style={styles.sectionDescription}>Export STU data in different formats</Text>
+                    
+                    <View style={styles.exportButtonsContainer}>
+                      <TouchableOpacity 
+                        style={styles.exportButton} 
+                        onPress={exportToExcel}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.exportButtonIcon}>📊</Text>
+                        <Text style={styles.exportButtonText}>Excel</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.exportButton} 
+                        onPress={exportToCSV}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.exportButtonIcon}>📄</Text>
+                        <Text style={styles.exportButtonText}>CSV</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={styles.exportButton} 
+                        onPress={copyToClipboard}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.exportButtonIcon}>📋</Text>
+                        <Text style={styles.exportButtonText}>Copy</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>Finish Pallet</Text>
+                    <Text style={styles.sectionDescription}>Enter height measurement and complete this pallet</Text>
+                    
+                    <Input
+                      value={palletHeight}
+                      onChangeText={setPalletHeight}
+                      placeholder="Enter height (cm)"
+                      keyboardType="numeric"
+                      containerStyle={styles.heightInput}
+                      inputStyle={styles.inputField}
                     />
+                    
                     <Button
-                      title="Export as CSV"
-                      onPress={exportToCSV}
-                      style={styles.exportButton}
-                    />
-                    <Button
-                      title="Copy to Clipboard"
-                      onPress={copyToClipboard}
-                      style={styles.exportButton}
+                      title="FINISH PALLET"
+                      onPress={handleFinishPallet}
+                      style={styles.finishButton}
                     />
                   </View>
+                </>
+              ) : (
+                <View style={styles.card}>
+                  <View style={styles.emptyStateContainer}>
+                    <Text style={styles.emptyStateIcon}>📦</Text>
+                    <Text style={styles.emptyStateTitle}>No STUs Added Yet</Text>
+                    <Text style={styles.emptyStateDescription}>
+                      Use the field above to scan or enter STU IDs and add them to this pallet.
+                    </Text>
+                  </View>
                 </View>
-              </>
-            )}
-          </View>
-
-          {activePallet.palletStus && activePallet.palletStus.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Finish Pallet</Text>
-              <Input
-                value={palletHeight}
-                onChangeText={setPalletHeight}
-                placeholder="Enter height (cm)"
-                keyboardType="numeric"
-                containerStyle={styles.input}
-              />
-              <Button
-                title="Finish Pallet"
-                onPress={handleFinishPallet}
-                style={styles.finishButton}
-              />
+              )}
+            </>
+          )}
+          
+          {loading && (
+            <View style={styles.overlayLoader}>
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loaderText}>Loading...</Text>
+              </View>
             </View>
           )}
-        </>
-      )}
-    </Page>
+        </Animated.View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  scrollViewContent: {
+    paddingBottom: 40,
+  },
   container: {
-    padding: spacing.md,
+    padding: 20,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: spacing.md,
-    color: colors.primary,
+  headerTitle: {
+    marginBottom: 20,
+    marginTop: 10,
   },
-  section: {
-    marginBottom: spacing.lg,
+  headerTitleText: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: COLORS.text,
+    letterSpacing: 0.5,
+  },
+  headerTitleAccent: {
+    color: COLORS.primary,
+    textShadowColor: 'rgba(0, 169, 181, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 5,
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: spacing.md,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 6,
+  },
+  sectionDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 20,
   },
   palletTypesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    marginHorizontal: -5,
   },
   palletTypeButton: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: 8,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 15,
+    marginHorizontal: 5,
+    marginBottom: 10,
     minWidth: 100,
     alignItems: 'center',
-    margin: spacing.xs,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  palletTypeEmoji: {
+    fontSize: 24,
+    marginBottom: 6,
   },
   palletTypeText: {
-    color: colors.primary,
-    fontWeight: '500',
     fontSize: 16,
-  },
-  emptyText: {
-    color: colors.textLight,
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: spacing.md,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   inputRow: {
     flexDirection: 'row',
@@ -461,86 +666,216 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    marginRight: spacing.sm,
+    marginRight: 10,
+    marginBottom: 0,
+  },
+  inputField: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 8,
+    borderWidth: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
   },
   loadButton: {
-    width: 100,
-  },
-  stuTable: {
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: 80,
     borderRadius: 8,
-    marginTop: spacing.md,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    padding: spacing.sm,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-  },
-  headerCell: {
-    flex: 1,
-    fontWeight: '600',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    padding: spacing.sm,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  cell: {
-    flex: 1,
-  },
-  deleteButton: {
-    padding: spacing.xs,
-    width: 40,
-    alignItems: 'center',
-  },
-  deleteIcon: {
-    color: colors.error,
-    fontSize: 20,
-  },
-  errorText: {
-    color: colors.error,
-    marginTop: spacing.xs,
-    fontSize: 14,
-  },
-  finishButton: {
-    marginTop: spacing.md,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.lg,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: 20,
+  },
+  palletInfoTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.primary,
   },
   backButton: {
-    width: 80,
+    backgroundColor: COLORS.background,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButtonText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 16,
   },
   addButton: {
     width: 80,
-    marginLeft: spacing.sm,
+    borderRadius: 8,
   },
-  exportSection: {
-    marginTop: spacing.lg,
+  stuHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  stuCount: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
+    backgroundColor: COLORS.background,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  stuTable: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  headerCell: {
+    flex: 1,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+  actionCell: {
+    flex: 0,
+    width: 50,
+    textAlign: 'center',
+  },
+  tableRow: {
+    flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
+    borderColor: COLORS.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  cell: {
+    flex: 1,
+    fontSize: 14,
+  },
+  deleteButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteIcon: {
+    color: COLORS.error,
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   exportButtonsContainer: {
-    flexDirection: 'column',
-    gap: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
   exportButton: {
-    marginBottom: spacing.sm,
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginHorizontal: 5,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  exportButtonIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  exportButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+  heightInput: {
+    marginBottom: 20,
+  },
+  finishButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+  },
+  emptyText: {
+    color: COLORS.textLight,
+    fontSize: 14,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 30,
+  },
+  emptyStateIcon: {
+    fontSize: 40,
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  emptyStateDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    maxWidth: '80%',
+  },
+  overlayLoader: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loaderContainer: {
+    backgroundColor: COLORS.card,
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  loaderText: {
+    marginTop: 12,
+    color: COLORS.text,
+    fontWeight: '600',
+  },
+  loader: {
+    marginVertical: 30,
   },
 });
 

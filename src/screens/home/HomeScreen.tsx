@@ -28,8 +28,8 @@ const COLORS = {
   headerBackground: '#FFFFFF',
   card: '#FFFFFF',
   cardActive: '#F0F9F6',
-  primary: '#53ba82',
-  secondary: '#1859e6',
+  primary: '#00A9B5', // Changed to teal to match login screen
+  secondary: '#333333', // Adjusted to match login screen
   accent: '#ff6f00',
   text: '#333333',
   textLight: '#888888',
@@ -37,7 +37,6 @@ const COLORS = {
   shadow: 'rgba(0, 0, 0, 0.1)',
   danger: '#ff3b30',
 };
-
 // Define interface for MenuOption props
 interface MenuOptionProps {
   title: string;
@@ -222,20 +221,20 @@ const ModernHomeScreen = () => {
         <View style={styles.headerContainer}>
           <View style={styles.headerContent}>
             <View style={styles.titleContainer}>
-              <Animated.Text 
-                style={[
-                  styles.headerTitle,
-                  { 
-                    transform: [
-                      { scale: titleScale },
-                      { rotate: spin }
-                    ] 
-                  }
-                ]}
-              >
-                <Text style={styles.headerTitleText}>3PL </Text>
-                <Text style={[styles.headerTitleText, styles.warehouseText]}>Warehouse</Text>
-              </Animated.Text>
+            <Animated.Text 
+              style={[
+                styles.headerTitle,
+                { 
+                  transform: [
+                    { scale: titleScale },
+                    { rotate: spin }
+                  ] 
+                }
+              ]}
+            >
+              <Text style={styles.headerTitleText}>3PL </Text>
+              <Text style={[styles.headerTitleText, styles.warehouseText]}>Door</Text>
+            </Animated.Text>
             </View>
             
             <View style={styles.profileIcon}>
@@ -287,7 +286,7 @@ const ModernHomeScreen = () => {
               onPress={() => toggleSection('receive')}
               activeOpacity={0.9}
             >
-              <View style={[styles.sectionIcon, { backgroundColor: 'rgba(83, 186, 130, 0.1)' }]}>
+              <View style={[styles.sectionIcon, { backgroundColor: 'rgba(0, 169, 181, 0.1)' }]}>
                 <Text style={[styles.sectionIconText, { color: COLORS.primary }]}>📦</Text>
               </View>
               <View style={styles.sectionTitleContainer}>
@@ -302,7 +301,7 @@ const ModernHomeScreen = () => {
             {expandedSection === 'receive' && (
               <View style={styles.sectionContent}>
                 <MenuOption 
-                  title="Scheduled Inbound" 
+                  title="Inbound" 
                   icon={<Text style={styles.menuIcon}>📅</Text>}
                   onPress={() => navigateTo('Inbound')}
                 />
@@ -483,10 +482,10 @@ const styles = StyleSheet.create({
   },
   headerTitleText: {
     fontSize: 30,
-    fontWeight: '900',
+    fontWeight: '800',
     color: COLORS.primary,
     letterSpacing: 0.5,
-    textShadowColor: 'rgba(83, 186, 130, 0.3)',
+    textShadowColor: 'rgba(0, 169, 181, 0.3)', // Update to match teal color
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 5,
   },
@@ -592,8 +591,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    justifyContent: 'center',
+    justifyContent: 'center', 
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 169, 181, 0.1)', // Update to teal theme
     marginRight: 15,
   },
   sectionIconText: {
