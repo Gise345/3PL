@@ -10,23 +10,37 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated,
+  StatusBar
 } from 'react-native';
-import { Page, Button } from '../../components/common';
-import { colors, typography, spacing, shadows } from '../../utils/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ModernButton } from '../../components/common';
+import { colors } from '../../utils/theme';
 import { InboundDetailScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api/inboundService';
-// We will simulate the image picker functionality for now
-// Later you'll need to install: expo install expo-image-picker
 
-// Interface for the printer type
-interface Printer {
-  name: string;
-  value: string;
-}
+// Define modern color palette with teal primary color to match other screens
+const COLORS = {
+  background: '#F5F7FA',
+  card: '#FFFFFF',
+  cardActive: '#F0F9F6',
+  primary: '#00A9B5', // Teal color matching login screen
+  secondary: '#333333',
+  accent: '#ff6f00',
+  text: '#333333',
+  textLight: '#888888',
+  border: '#E0E0E0',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  error: '#ff3b30',
+  success: '#4CD964',
+  warning: '#FFCC00',
+  surface: '#F5F7FA',
+  inputBackground: '#F5F7FA',
+};
 
-const InboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
+const ModernInboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
   route,
   navigation,
 }) => {
@@ -61,8 +75,13 @@ const InboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
   
   // Step management
   const [currentStep, setCurrentStep] = useState(1);
-  const [availablePrinters, setAvailablePrinters] = useState<Printer[]>([]);
-  const [printer, setPrinter] = useState<Printer | null>(null);
+  const [availablePrinters, setAvailablePrinters] = useState<{ name: string; value: string }[]>([]);
+  const [printer, setPrinter] = useState<{ name: string; value: string } | null>(null);
+  
+  // Animation values
+  const [fadeIn] = useState(new Animated.Value(0));
+  const [slideUp] = useState(new Animated.Value(30));
+  const [cardScale] = useState(new Animated.Value(0.95));
   
   useEffect(() => {
     // Get available printers based on warehouse
@@ -82,6 +101,26 @@ const InboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
     }
     
     setAvailablePrinters(printers);
+    
+    // Animate in the components
+    Animated.parallel([
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideUp, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [warehouse]);
   
   // Function to check if MRN is required but missing
@@ -208,7 +247,7 @@ const InboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
   };
   
   // Function to select a printer
-  const handleSelectPrinter = (selectedPrinter: Printer) => {
+  const handleSelectPrinter = (selectedPrinter: { name: string; value: string }) => {
     setPrinter(selectedPrinter);
     setCurrentStep(8);
     scrollToBottom();
@@ -349,287 +388,463 @@ const InboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
   };
 
   return (
-    <Page
-      title={`Process Inbound (${warehouse})`}
-      showHeader
-      showBackButton
-      loading={loading}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      
+      <Animated.View 
+        style={[
+          styles.container, 
+          { 
+            opacity: fadeIn,
+            transform: [{ translateY: slideUp }]
+          }
+        ]}
       >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.headerTitle}>
+            Process Inbound
+            <Text style={styles.warehouseText}> ({warehouse})</Text>
+          </Text>
+          
+          <View style={styles.headerPlaceholder} />
+        </View>
+        
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
         >
-          {/* Inbound Summary */}
-          <View style={styles.card}>
-            <Text style={styles.companyName}>{inbound.companyName}</Text>
-            <Text style={styles.poNumber}>{inbound.poNumber}</Text>
-            
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Booking:</Text>
-              <Text style={styles.infoValue}>{inbound.requestedDate}</Text>
-              <Text style={styles.infoValue}>{inbound.timeSlot}</Text>
-            </View>
-            
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Customer:</Text>
-              <Text style={styles.infoValue}>{inbound.companyCode}</Text>
-            </View>
-            
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Transit Type:</Text>
-              <Text style={styles.infoValue}>{inbound.transitType}</Text>
-            </View>
-            
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Container Type:</Text>
-              <Text style={styles.infoValue}>{inbound.containerType}</Text>
-            </View>
-            
-            {inbound.numberPallets && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Number of Pallets:</Text>
-                <Text style={styles.infoValue}>{inbound.numberPallets}</Text>
-              </View>
-            )}
-            
-            {inbound.numberCartons && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Number of Cartons:</Text>
-                <Text style={styles.infoValue}>{inbound.numberCartons}</Text>
-              </View>
-            )}
-            
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Service:</Text>
-              <Text style={styles.infoValue}>{inbound.inboundService}</Text>
-            </View>
-            
-            {currentStep >= 6 && receiptLane && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Receipt Lane:</Text>
-                <Text style={styles.infoValue}>{receiptLane.toUpperCase()}</Text>
-              </View>
-            )}
-            
-            {currentStep >= 7 && printer && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Printer:</Text>
-                <Text style={styles.infoValue}>{printer.name}</Text>
-              </View>
-            )}
-            
-            {currentStep >= 3 && mrn && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>MRN:</Text>
-                <Text style={styles.infoValue}>{mrn}</Text>
-              </View>
-            )}
-          </View>
-          
-          {/* Photos Preview */}
-          {(transitPhoto || productPhoto || mrnDocPhoto) && (
-            <View style={styles.photoPreviewContainer}>
-              {mrnDocPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>MRN Document</Text>
-                  <Image source={{ uri: mrnDocPhoto }} style={styles.photoThumbnail} />
-                </View>
-              )}
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Inbound Summary Card */}
+            <Animated.View 
+              style={[
+                styles.card,
+                { transform: [{ scale: cardScale }] }
+              ]}
+            >
+              <Text style={styles.companyName}>{inbound.companyName}</Text>
+              <Text style={styles.poNumber}>{inbound.poNumber}</Text>
               
-              {transitPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>Transit</Text>
-                  <Image source={{ uri: transitPhoto }} style={styles.photoThumbnail} />
+              <View style={styles.detailsContainer}>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Booking:</Text>
+                  <View style={styles.detailValueContainer}>
+                    <Text style={styles.detailValue}>{inbound.requestedDate}</Text>
+                    <Text style={styles.detailValue}>{inbound.timeSlot}</Text>
+                  </View>
                 </View>
-              )}
-              
-              {productPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>Products</Text>
-                  <Image source={{ uri: productPhoto }} style={styles.photoThumbnail} />
+                
+                <View style={styles.divider} />
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Customer:</Text>
+                  <Text style={styles.detailValue}>{inbound.companyCode}</Text>
                 </View>
-              )}
-            </View>
-          )}
-          
-          {/* Step 1: Confirm Number of Packages */}
-          {currentStep === 1 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Confirm Number of Transit Items</Text>
-              <TextInput
-                style={styles.input}
-                value={numberOfPackages}
-                onChangeText={setNumberOfPackages}
-                keyboardType="numeric"
-                placeholder="Enter number of items"
-              />
-              <Button
-                title="Confirm"
-                onPress={handleConfirmPackages}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 2: MRN Dialog */}
-          {showMrnDialog && (
-            <View style={styles.stepContainer}>
-              <View style={styles.alertContainer}>
-                <Text style={styles.alertTitle}>MRN Required</Text>
-                <Text style={styles.alertText}>
-                  Inbound {inbound.poNumber} has arrived without an accompanying MRN (Movement Reference Number).
-                  {'\n\n'}
-                  Does the haulier have an MRN?
+                
+                <View style={styles.divider} />
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Transit Type:</Text>
+                  <Text style={styles.detailValue}>{inbound.transitType}</Text>
+                </View>
+                
+                <View style={styles.divider} />
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Container:</Text>
+                  <Text style={styles.detailValue}>{inbound.containerType}</Text>
+                </View>
+                
+                {inbound.numberPallets && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Number of Pallets:</Text>
+                      <Text style={styles.detailValue}>{inbound.numberPallets}</Text>
+                    </View>
+                  </>
+                )}
+                
+                {inbound.numberCartons && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Number of Cartons:</Text>
+                      <Text style={styles.detailValue}>{inbound.numberCartons}</Text>
+                    </View>
+                  </>
+                )}
+                
+                <View style={styles.divider} />
+                
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Service:</Text>
+                  <Text style={styles.detailValue}>{inbound.inboundService}</Text>
+                </View>
+                
+                {currentStep >= 6 && receiptLane && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Receipt Lane:</Text>
+                      <Text style={styles.detailValue}>{receiptLane.toUpperCase()}</Text>
+                    </View>
+                  </>
+                )}
+                
+                {currentStep >= 7 && printer && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Printer:</Text>
+                      <Text style={styles.detailValue}>{printer.name}</Text>
+                    </View>
+                  </>
+                )}
+                
+                {currentStep >= 3 && mrn && (
+                  <>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>MRN:</Text>
+                      <Text style={styles.detailValue}>{mrn}</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </Animated.View>
+            
+            {/* Photos Preview */}
+            {(transitPhoto || productPhoto || mrnDocPhoto) && (
+              <View style={styles.photoPreviewContainer}>
+                {mrnDocPhoto && (
+                  <View style={styles.photoItem}>
+                    <Text style={styles.photoLabel}>MRN Document</Text>
+                    <Image source={{ uri: mrnDocPhoto }} style={styles.photoThumbnail} />
+                  </View>
+                )}
+                
+                {transitPhoto && (
+                  <View style={styles.photoItem}>
+                    <Text style={styles.photoLabel}>{inbound.transitType}</Text>
+                    <Image source={{ uri: transitPhoto }} style={styles.photoThumbnail} />
+                  </View>
+                )}
+                
+                {productPhoto && (
+                  <View style={styles.photoItem}>
+                    <Text style={styles.photoLabel}>
+                      {inbound.numberPallets ? 'Pallets' : 'Cartons'}
+                    </Text>
+                    <Image source={{ uri: productPhoto }} style={styles.photoThumbnail} />
+                  </View>
+                )}
+              </View>
+            )}
+            
+            {/* Step 1: Confirm Number of Packages */}
+            {currentStep === 1 && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Confirm Number of Transit Items</Text>
+                <Text style={styles.stepDescription}>
+                  Please verify the number of {inbound.numberPallets ? 'pallets' : 'cartons'} received
                 </Text>
                 
-                <View style={styles.alertButtonsContainer}>
-                  <TouchableOpacity
-                    style={[styles.alertButton, styles.alertButtonCancel]}
-                    onPress={() => handleMrnResponse(false)}
-                  >
-                    <Text style={styles.alertButtonText}>No</Text>
-                  </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  value={numberOfPackages}
+                  onChangeText={setNumberOfPackages}
+                  keyboardType="numeric"
+                  placeholder="Enter number of items"
+                  placeholderTextColor={COLORS.textLight}
+                />
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleConfirmPackages}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 2: MRN Dialog */}
+            {showMrnDialog && (
+              <View style={styles.stepCard}>
+                <View style={styles.alertContainer}>
+                  <Text style={styles.alertIcon}>⚠️</Text>
+                  <Text style={styles.alertTitle}>MRN Required</Text>
+                  <Text style={styles.alertText}>
+                    Inbound {inbound.poNumber} has arrived without an accompanying MRN (Movement Reference Number).
+                    {'\n\n'}
+                    Does the haulier have an MRN?
+                  </Text>
                   
-                  <TouchableOpacity
-                    style={[styles.alertButton, styles.alertButtonConfirm]}
-                    onPress={() => handleMrnResponse(true)}
-                  >
-                    <Text style={styles.alertButtonText}>Yes</Text>
-                  </TouchableOpacity>
+                  <View style={styles.alertButtonsContainer}>
+                    <TouchableOpacity
+                      style={[styles.alertButton, styles.alertButtonNo]}
+                      onPress={() => handleMrnResponse(false)}
+                    >
+                      <Text style={styles.alertButtonNoText}>No</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.alertButton, styles.alertButtonYes]}
+                      onPress={() => handleMrnResponse(true)}
+                    >
+                      <Text style={styles.alertButtonYesText}>Yes</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          )}
-          
-          {/* Step 3: Enter MRN */}
-          {currentStep === 3 && haulierCanProvideMrn && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Enter MRN/GMR ID</Text>
-              <TextInput
-                style={styles.input}
-                value={mrn}
-                onChangeText={setMrn}
-                placeholder="Enter MRN"
-              />
-              {mrnError ? <Text style={styles.errorText}>{mrnError}</Text> : null}
-              <Button
-                title="Confirm"
-                onPress={handleConfirmMrn}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 4: Capture MRN Document Photo */}
-          {currentStep === 4 && haulierCanProvideMrn && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture MRN Document Photo</Text>
-              <Button
-                title="Take Photo of MRN Document"
-                onPress={captureMrnDocPhoto}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 5: Capture Transit Photo */}
-          {currentStep === 5 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture Transit Photo</Text>
-              <Button
-                title={`Take Photo of ${inbound.transitType}`}
-                onPress={captureTransitPhoto}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 6: Capture Product Photo */}
-          {currentStep === 5 && transitPhoto && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture Product Photo</Text>
-              <Button
-                title={`Take Photo of ${
-                  inbound.numberPallets ? 'Pallets' : 'Cartons'
-                }`}
-                onPress={captureProductPhoto}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 6: Enter Receipt Lane */}
-          {currentStep === 6 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Enter Receipt Lane</Text>
-              <TextInput
-                style={styles.input}
-                value={receiptLane}
-                onChangeText={setReceiptLane}
-                placeholder="Enter receipt lane"
-                autoCapitalize="characters"
-              />
-              {receiptLaneError ? (
-                <Text style={styles.errorText}>{receiptLaneError}</Text>
-              ) : null}
-              <Button
-                title="Confirm"
-                onPress={checkReceiptLane}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 7: Select Printer */}
-          {currentStep === 7 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Select Label Printer</Text>
-              {availablePrinters.map((printerItem) => (
-                <Button
-                  key={printerItem.value}
-                  title={printerItem.name}
-                  onPress={() => handleSelectPrinter(printerItem)}
-                  style={styles.printerButton}
+            )}
+            
+            {/* Step 3: Enter MRN */}
+            {currentStep === 3 && haulierCanProvideMrn && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Enter MRN/GMR ID</Text>
+                <Text style={styles.stepDescription}>
+                  Enter the Movement Reference Number provided by the haulier
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={mrn}
+                  onChangeText={setMrn}
+                  placeholder="Enter MRN"
+                  placeholderTextColor={COLORS.textLight}
                 />
-              ))}
-            </View>
-          )}
-          
-          {/* Step 8: Complete Inbound */}
-          {currentStep === 8 && (
-            <View style={styles.stepContainer}>
-              {isMrnRequired && !haulierCanProvideMrn ? (
-                <>
-                  <Text style={styles.warningText}>
-                    Please ensure the stock is quarantined until an MRN is provided by the customer.
-                  </Text>
-                  <Button
-                    title="Print MRN Error Label"
-                    onPress={handleSubmitMrnError}
-                    style={styles.warningButton}
+                
+                {mrnError ? <Text style={styles.errorText}>{mrnError}</Text> : null}
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleConfirmMrn}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 4: Capture MRN Document Photo */}
+            {currentStep === 4 && haulierCanProvideMrn && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Capture MRN Document Photo</Text>
+                <Text style={styles.stepDescription}>
+                  Take a photo of the MRN document provided by the haulier
+                </Text>
+                
+                <ModernButton
+                  title="Take Photo of MRN Document"
+                  onPress={captureMrnDocPhoto}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 5: Capture Transit Photo */}
+            {currentStep === 5 && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Capture Transit Photo</Text>
+                <Text style={styles.stepDescription}>
+                  Take a photo of the {inbound.transitType} for verification
+                </Text>
+                
+                <ModernButton
+                  title={`Take Photo of ${inbound.transitType}`}
+                  onPress={captureTransitPhoto}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 6: Capture Product Photo */}
+            {currentStep === 5 && transitPhoto && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Capture Product Photo</Text>
+                <Text style={styles.stepDescription}>
+                  Take a photo of the {inbound.numberPallets ? 'pallets' : 'cartons'} for verification
+                </Text>
+                
+                <ModernButton
+                  title={`Take Photo of ${inbound.numberPallets ? 'Pallets' : 'Cartons'}`}
+                  onPress={captureProductPhoto}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 6: Enter Receipt Lane */}
+            {currentStep === 6 && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Enter Receipt Lane</Text>
+                <Text style={styles.stepDescription}>
+                  Enter the storage lane where the items will be received
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={receiptLane}
+                  onChangeText={setReceiptLane}
+                  placeholder="Enter receipt lane"
+                  placeholderTextColor={COLORS.textLight}
+                  autoCapitalize="characters"
+                />
+                
+                {receiptLaneError ? (
+                  <Text style={styles.errorText}>{receiptLaneError}</Text>
+                ) : null}
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={checkReceiptLane}
+                  variant="primary"
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 7: Select Printer */}
+            {currentStep === 7 && (
+              <View style={styles.stepCard}>
+                <Text style={styles.stepTitle}>Select Label Printer</Text>
+                <Text style={styles.stepDescription}>
+                  Choose a printer to generate the inbound label
+                </Text>
+                
+                {availablePrinters.map((printerItem) => (
+                  <ModernButton
+                    key={printerItem.value}
+                    title={printerItem.name}
+                    onPress={() => handleSelectPrinter(printerItem)}
+                    variant="outline"
+                    style={styles.printerButton}
                   />
-                </>
-              ) : (
-                <Button
-                  title="Complete Inbound"
-                  onPress={handleSubmitInbound}
-                  style={styles.successButton}
-                />
-              )}
+                ))}
+              </View>
+            )}
+            
+            {/* Step 8: Complete Inbound */}
+            {currentStep === 8 && (
+              <View style={styles.stepCard}>
+                {isMrnRequired && !haulierCanProvideMrn ? (
+                  <>
+                    <View style={styles.warningContainer}>
+                      <Text style={styles.warningIcon}>⚠️</Text>
+                      <Text style={styles.warningText}>
+                        Please ensure the stock is quarantined until an MRN is provided by the customer.
+                      </Text>
+                    </View>
+                    
+                    <ModernButton
+                      title="Print MRN Error Label"
+                      onPress={handleSubmitMrnError}
+                      variant="warning"
+                      style={styles.warningButton}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.stepTitle}>Complete Inbound</Text>
+                    <Text style={styles.stepDescription}>
+                      Process the inbound shipment and print the label
+                    </Text>
+                    
+                    <ModernButton
+                      title="Complete Inbound"
+                      onPress={handleSubmitInbound}
+                      variant="primary"
+                      style={styles.button}
+                    />
+                  </>
+                )}
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+        
+        {/* Loading Overlay */}
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Processing...</Text>
             </View>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Page>
+          </View>
+        )}
+      </Animated.View>
+    </SafeAreaView>
   );
 };
 
+// Styles
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  warehouseText: {
+    color: COLORS.primary,
+  },
+  headerPlaceholder: {
+    width: 40,
+  },
   keyboardAvoidingView: {
     flex: 1,
   },
@@ -637,158 +852,260 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxxl,
+    padding: 16,
+    paddingBottom: 50,
   },
   card: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.small,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   companyName: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.textSecondary,
+    fontSize: 16,
+    color: COLORS.textLight,
     textAlign: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: 4,
   },
   poNumber: {
-    fontSize: typography.fontSizes.title,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.text,
     textAlign: 'center',
-    marginBottom: spacing.md,
+    marginBottom: 20,
   },
-  infoRow: {
+  detailsContainer: {
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+  },
+  detailRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: spacing.sm,
+    padding: 12,
     alignItems: 'center',
   },
-  infoLabel: {
-    fontSize: typography.fontSizes.medium,
-    fontWeight: typography.fontWeights.medium as any,
-    color: colors.textSecondary,
-    width: 120,
+  detailLabel: {
+    width: 140,
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.textLight,
   },
-  infoValue: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    fontWeight: typography.fontWeights.semibold as any,
-    marginRight: spacing.sm,
+  detailValueContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  detailValue: {
+    fontSize: 15,
+    color: COLORS.text,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
   },
   photoPreviewContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'center',
-    marginBottom: spacing.md,
+    flexWrap: 'wrap',
+    marginBottom: 20,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   photoItem: {
     alignItems: 'center',
-    margin: spacing.xs,
+    margin: 8,
   },
   photoLabel: {
-    fontSize: typography.fontSizes.small,
-    color: colors.textSecondary,
-    marginBottom: spacing.xxs,
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 8,
   },
   photoThumbnail: {
-    width: 75,
-    height: 75,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  stepContainer: {
-    backgroundColor: colors.cardBackground,
+    width: 100,
+    height: 100,
     borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.small,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  stepCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   stepTitle: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.semibold as any,
-    color: colors.text,
-    marginBottom: spacing.md,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  stepDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 20,
     textAlign: 'center',
   },
   input: {
-    backgroundColor: colors.inputBackground,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: COLORS.surface,
     borderRadius: 8,
-    padding: spacing.sm,
-    fontSize: typography.fontSizes.regular,
-    marginBottom: spacing.md,
-  },
-  button: {
-    marginTop: spacing.xs,
-  },
-  printerButton: {
-    marginBottom: spacing.sm,
-  },
-  warningButton: {
-    backgroundColor: colors.warning,
-  },
-  successButton: {
-    backgroundColor: colors.success,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   errorText: {
-    color: colors.error,
-    fontSize: typography.fontSizes.small,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.sm,
+    color: COLORS.error,
+    fontSize: 14,
+    marginTop: -16,
+    marginBottom: 16,
+  },
+  button: {
+    marginTop: 8,
+  },
+  printerButton: {
+    marginBottom: 12,
   },
   alertContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.warning,
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+  },
+  alertIcon: {
+    fontSize: 40,
+    marginBottom: 16,
   },
   alertTitle: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
-    marginBottom: spacing.sm,
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 12,
   },
   alertText: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    marginBottom: spacing.md,
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   alertButtonsContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    width: '100%',
   },
   alertButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 4,
-    marginLeft: spacing.sm,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginHorizontal: 8,
+    maxWidth: 120,
   },
-  alertButtonCancel: {
-    backgroundColor: colors.surface,
+  alertButtonNo: {
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: COLORS.border,
   },
-  alertButtonConfirm: {
-    backgroundColor: colors.primary,
+  alertButtonNoText: {
+    color: COLORS.text,
+    fontWeight: '600',
   },
-  alertButtonText: {
-    color: colors.text,
-    fontWeight: typography.fontWeights.medium as any,
+  alertButtonYes: {
+    backgroundColor: COLORS.primary,
+  },
+  alertButtonYesText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  warningContainer: {
+    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  warningIcon: {
+    fontSize: 30,
+    marginBottom: 12,
   },
   warningText: {
-    color: colors.warning,
-    fontSize: typography.fontSizes.medium,
-    fontWeight: typography.fontWeights.medium as any,
-    marginBottom: spacing.md,
+    fontSize: 16,
+    color: COLORS.text,
     textAlign: 'center',
+    lineHeight: 22,
+  },
+  warningButton: {
+    backgroundColor: COLORS.warning,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingContainer: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
   },
 });
 
-export default InboundDetailScreen;
+export default ModernInboundDetailScreen;

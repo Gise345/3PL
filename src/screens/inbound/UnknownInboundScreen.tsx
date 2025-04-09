@@ -11,13 +11,38 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Animated,
+  StatusBar,
+  Dimensions
 } from 'react-native';
-import { Page, Button } from '../../components/common';
-import { colors, typography, spacing, shadows } from '../../utils/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { UnknownInboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api/inboundService';
+import { ModernButton } from '../../components/common';
+
+// Define modern color palette with teal primary color to match other screens
+const COLORS = {
+  background: '#F5F7FA',
+  card: '#FFFFFF',
+  cardActive: '#F0F9F6',
+  primary: '#00A9B5', // Teal color matching login screen
+  secondary: '#333333',
+  accent: '#ff6f00',
+  text: '#333333',
+  textLight: '#888888',
+  border: '#E0E0E0',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  error: '#ff3b30',
+  success: '#4CD964',
+  warning: '#FFCC00',
+  surface: '#F5F7FA',
+  inputBackground: '#F5F7FA',
+};
+
+// Get screen dimensions for responsive sizing
+const { width, height } = Dimensions.get('window');
 
 // Define interfaces
 interface Company {
@@ -31,7 +56,7 @@ interface Printer {
   value: string;
 }
 
-const UnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navigation }) => {
+const ModernUnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navigation }) => {
   const { warehouse } = useAppSelector((state) => state.settings);
   const { user } = useAppSelector((state) => state.auth);
   
@@ -68,6 +93,11 @@ const UnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navigation 
   // Reference to scroll view
   const scrollViewRef = useRef<ScrollView>(null);
   
+  // Animation values
+  const [fadeIn] = useState(new Animated.Value(0));
+  const [slideUp] = useState(new Animated.Value(30));
+  const [titleScale] = useState(new Animated.Value(0.95));
+  
   // Transit types
   const transitTypes = [
     { name: 'Cartons', value: 'cartons' },
@@ -96,6 +126,26 @@ const UnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navigation 
     }
     
     setAvailablePrinters(printers);
+    
+    // Animate components on mount
+    Animated.parallel([
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideUp, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(titleScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [warehouse]);
   
   // Get companies from API
@@ -333,18 +383,17 @@ const UnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navigation 
       };
       
       // Add MRN if provided
-      // Prepare data with potential MRN properties
-const submitDataWithMrn: any = {
-    ...submitData
-  };
-  
-  // Add MRN if provided
-  if (mrn) {
-    submitDataWithMrn.mrn = mrn;
-    if (mrnDocPhoto) {
-      submitDataWithMrn.haulierMrnDocPhoto = `${poNumber}-mrn_doc.jpg`;
-    }
-  }
+      const submitDataWithMrn: any = {
+        ...submitData
+      };
+      
+      // Add MRN if provided
+      if (mrn) {
+        submitDataWithMrn.mrn = mrn;
+        if (mrnDocPhoto) {
+          submitDataWithMrn.haulierMrnDocPhoto = `${poNumber}-mrn_doc.jpg`;
+        }
+      }
       
       // Submit unknown inbound
       const response = await inboundService.submitUnknownInbound(submitDataWithMrn);
@@ -375,296 +424,542 @@ const submitDataWithMrn: any = {
   // Render a company item
   const renderCompanyItem = ({ item }: { item: Company }) => (
     <TouchableOpacity
-      style={styles.companyItem}
+      style={styles.companyCard}
       onPress={() => handleSelectCompany(item)}
+      activeOpacity={0.7}
     >
-      <Text style={styles.companyName}>{item.companyName}</Text>
-      <Text style={styles.companyCode}>{item.companyCode}</Text>
+      <View style={styles.companyCardContent}>
+        <Text style={styles.companyName}>{item.companyName}</Text>
+        <View style={styles.companyCodeContainer}>
+          <Text style={styles.companyCode}>{item.companyCode}</Text>
+        </View>
+      </View>
+      <View style={styles.selectButtonContainer}>
+        <Text style={styles.selectButtonText}>Select →</Text>
+      </View>
     </TouchableOpacity>
   );
   
   return (
-    <Page
-      title={`Unknown Inbound (${warehouse})`}
-      showHeader
-      showBackButton
-      loading={loading}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      
+      <Animated.View 
+        style={[
+          styles.container, 
+          { 
+            opacity: fadeIn,
+            transform: [{ translateY: slideUp }]
+          }
+        ]}
       >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+          
+          <Animated.Text 
+            style={[
+              styles.headerTitle,
+              { transform: [{ scale: titleScale }] }
+            ]}
+          >
+            <Text style={styles.headerTitleText}>Unknown Inbound </Text>
+            <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
+          </Animated.Text>
+          
+          <View style={styles.headerPlaceholder} />
+        </View>
+        
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
         >
-          {/* Step 1: Select Company */}
-          {currentStep === 1 ? (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Select Company</Text>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search companies..."
-                value={searchCompany}
-                onChangeText={onTextChangedCompany}
-              />
-              
-              {filteredCompanies.length > 0 ? (
-                <FlatList
-                  data={filteredCompanies}
-                  renderItem={renderCompanyItem}
-                  keyExtractor={(item) => item.id.toString()}
-                  style={styles.companiesList}
-                />
-              ) : (
-                <Text style={styles.emptyText}>No companies found</Text>
-              )}
-            </View>
-          ) : (
-            /* Company Summary */
-            selectedCompany && (
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Company:</Text>
-                <Text style={styles.summaryValue}>{selectedCompany.companyName}</Text>
-                <Text style={styles.summaryCode}>({selectedCompany.companyCode})</Text>
-              </View>
-            )
-          )}
-          
-          {/* Photos Preview */}
-          {(transitPhoto || productPhoto || mrnDocPhoto) && (
-            <View style={styles.photoPreviewContainer}>
-              {mrnDocPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>MRN Document</Text>
-                  <Image source={{ uri: mrnDocPhoto }} style={styles.photoThumbnail} />
-                </View>
-              )}
-              
-              {transitPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>
-                    {transitType?.name || 'Transit'}
-                  </Text>
-                  <Image source={{ uri: transitPhoto }} style={styles.photoThumbnail} />
-                </View>
-              )}
-              
-              {productPhoto && (
-                <View style={styles.photoItem}>
-                  <Text style={styles.photoLabel}>Products</Text>
-                  <Image source={{ uri: productPhoto }} style={styles.photoThumbnail} />
-                </View>
-              )}
-            </View>
-          )}
-          
-          {/* Step 2: Enter Carrier Name */}
-          {currentStep === 2 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Enter Carrier Name</Text>
-              <TextInput
-                style={styles.input}
-                value={carrierName}
-                onChangeText={setCarrierName}
-                placeholder="Enter carrier name"
-                autoCapitalize="characters"
-              />
-              <Button
-                title="Confirm"
-                onPress={handleSetCarrier}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 3: Select Transit Type */}
-          {currentStep === 3 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Select Transit Type</Text>
-              {transitTypes.map((type) => (
-                <TouchableOpacity
-                  key={type.value}
-                  style={styles.optionItem}
-                  onPress={() => handleSelectTransitType(type)}
-                >
-                  <Text style={styles.optionText}>{type.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          
-          {/* Step 4: Select Container Type */}
-          {currentStep === 4 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Select Container Type</Text>
-              {containerTypes.map((type) => (
-                <TouchableOpacity
-                  key={type.api_value}
-                  style={styles.optionItem}
-                  onPress={() => handleSelectContainerType(type)}
-                >
-                  <Text style={styles.optionText}>{type.text}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          
-          {/* Step 5: Enter Number of Packages */}
-          {currentStep === 5 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>
-                Number of {transitType?.name || 'Packages'}
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={numberOfPackages}
-                onChangeText={setNumberOfPackages}
-                keyboardType="numeric"
-                placeholder="Enter number of packages"
-              />
-              <Button
-                title="Confirm"
-                onPress={handleSetPackages}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* MRN Dialog */}
-          {showMrnDialog && (
-            <View style={styles.stepContainer}>
-              <View style={styles.alertContainer}>
-                <Text style={styles.alertTitle}>MRN Required</Text>
-                <Text style={styles.alertText}>
-                  Does the haulier have an MRN (Movement Reference Number)?
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Step 1: Select Company */}
+            {currentStep === 1 ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Select Company</Text>
+                <Text style={styles.cardDescription}>
+                  Choose the company for this unknown inbound shipment
                 </Text>
                 
-                <View style={styles.alertButtonsContainer}>
-                  <TouchableOpacity
-                    style={[styles.alertButton, styles.alertButtonCancel]}
-                    onPress={() => handleMrnResponse(false)}
-                  >
-                    <Text style={styles.alertButtonText}>No</Text>
-                  </TouchableOpacity>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search companies..."
+                  value={searchCompany}
+                  onChangeText={onTextChangedCompany}
+                  placeholderTextColor={COLORS.textLight}
+                />
+                
+                {filteredCompanies.length > 0 ? (
+                  <FlatList
+                    data={filteredCompanies}
+                    renderItem={renderCompanyItem}
+                    keyExtractor={(item) => item.id.toString()}
+                    style={styles.companiesList}
+                    scrollEnabled={false} // Disable scrolling since we're inside a ScrollView
+                  />
+                ) : (
+                  <View style={styles.emptyStateContainer}>
+                    <Text style={styles.emptyStateIcon}>🔍</Text>
+                    <Text style={styles.emptyStateText}>
+                      {searchCompany ? `No results for "${searchCompany}"` : "No companies found"}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              /* Company Summary */
+              selectedCompany && (
+                <View style={styles.summaryCard}>
+                  <View style={styles.summaryHeader}>
+                    <Text style={styles.summaryTitle}>Company</Text>
+                    <TouchableOpacity 
+                      style={styles.editButton}
+                      onPress={() => setCurrentStep(1)}
+                    >
+                      <Text style={styles.editButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.summaryContent}>
+                    <Text style={styles.summaryValue}>{selectedCompany.companyName}</Text>
+                    <View style={styles.companyCodeBadge}>
+                      <Text style={styles.companyCodeBadgeText}>{selectedCompany.companyCode}</Text>
+                    </View>
+                  </View>
+                </View>
+              )
+            )}
+            
+            {/* Photos Preview */}
+            {(transitPhoto || productPhoto || mrnDocPhoto) && (
+              <View style={styles.photoPreviewCard}>
+                <Text style={styles.photoPreviewTitle}>Photos</Text>
+                <View style={styles.photoPreviewContainer}>
+                  {mrnDocPhoto && (
+                    <View style={styles.photoItem}>
+                      <Image source={{ uri: mrnDocPhoto }} style={styles.photoThumbnail} />
+                      <Text style={styles.photoLabel}>MRN Document</Text>
+                    </View>
+                  )}
                   
-                  <TouchableOpacity
-                    style={[styles.alertButton, styles.alertButtonConfirm]}
-                    onPress={() => handleMrnResponse(true)}
-                  >
-                    <Text style={styles.alertButtonText}>Yes</Text>
-                  </TouchableOpacity>
+                  {transitPhoto && (
+                    <View style={styles.photoItem}>
+                      <Image source={{ uri: transitPhoto }} style={styles.photoThumbnail} />
+                      <Text style={styles.photoLabel}>
+                        {transitType?.name || 'Transit'}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {productPhoto && (
+                    <View style={styles.photoItem}>
+                      <Image source={{ uri: productPhoto }} style={styles.photoThumbnail} />
+                      <Text style={styles.photoLabel}>Products</Text>
+                    </View>
+                  )}
                 </View>
               </View>
-            </View>
-          )}
-          
-          {/* Step 6: Enter MRN */}
-          {currentStep === 6 && haulierCanProvideMrn && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Enter MRN/GMR ID</Text>
-              <TextInput
-                style={styles.input}
-                value={mrn}
-                onChangeText={setMrn}
-                placeholder="Enter MRN"
-              />
-              <Button
-                title="Confirm"
-                onPress={handleSetMrn}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 7: Capture MRN Document Photo */}
-          {haulierCanProvideMrn && mrn && currentStep === 7 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture MRN Document Photo</Text>
-              <Button
-                title="Take Photo of MRN Document"
-                onPress={captureMrnDocPhoto}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 7/8: Capture Container Photo */}
-          {currentStep === 7 || (haulierCanProvideMrn && currentStep === 8) ? (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture Container Photo</Text>
-              <Button
-                title={`Take Photo #1`}
-                onPress={captureContainerPhoto}
-                style={styles.button}
-              />
-            </View>
-          ) : null}
-          
-          {/* Step 8/9: Capture Product Photo */}
-          {currentStep === 8 || (haulierCanProvideMrn && currentStep === 9) ? (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Capture Product Photo</Text>
-              <Button
-                title={`Take Photo #2`}
-                onPress={captureProductPhoto}
-                style={styles.button}
-              />
-            </View>
-          ) : null}
-          
-          {/* Step 9/10: Enter Receipt Lane */}
-          {currentStep === 9 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Enter Receipt Lane</Text>
-              <TextInput
-                style={styles.input}
-                value={receiptLane}
-                onChangeText={setReceiptLane}
-                placeholder="Enter receipt lane"
-                autoCapitalize="characters"
-              />
-              <Button
-                title="Confirm"
-                onPress={handleSetReceiptLane}
-                style={styles.button}
-              />
-            </View>
-          )}
-          
-          {/* Step 10: Select Printer */}
-          {currentStep === 10 && (
-            <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Select Label Printer</Text>
-              {availablePrinters.map((printerItem) => (
-                <Button
-                  key={printerItem.value}
-                  title={printerItem.name}
-                  onPress={() => handleSelectPrinter(printerItem)}
-                  style={styles.printerButton}
+            )}
+            
+            {/* Step 2: Enter Carrier Name */}
+            {currentStep === 2 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Enter Carrier Name</Text>
+                <Text style={styles.cardDescription}>
+                  Provide the name of the carrier delivering this shipment
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={carrierName}
+                  onChangeText={setCarrierName}
+                  placeholder="Enter carrier name"
+                  placeholderTextColor={COLORS.textLight}
+                  autoCapitalize="characters"
                 />
-              ))}
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleSetCarrier}
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 3: Select Transit Type */}
+            {currentStep === 3 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Select Transit Type</Text>
+                <Text style={styles.cardDescription}>
+                  Choose how the shipment was transported
+                </Text>
+                
+                <View style={styles.transitTypeContainer}>
+                  {transitTypes.map((type) => (
+                    <TouchableOpacity
+                      key={type.value}
+                      style={styles.transitTypeButton}
+                      onPress={() => handleSelectTransitType(type)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.transitTypeIcon}>
+                        {type.value === 'cartons' ? '📦' : 
+                         type.value === 'pallets' ? '📚' :
+                         type.value === 'containerLoose' ? '🚢' : '🏭'}
+                      </Text>
+                      <Text style={styles.transitTypeText}>{type.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            {/* Step 4: Select Container Type */}
+            {currentStep === 4 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Select Container Type</Text>
+                <Text style={styles.cardDescription}>
+                  Choose the type of container used for transport
+                </Text>
+                
+                {containerTypes.map((type) => (
+                  <TouchableOpacity
+                    key={type.api_value}
+                    style={styles.containerTypeButton}
+                    onPress={() => handleSelectContainerType(type)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.containerTypeText}>{type.text}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            
+            {/* Step 5: Enter Number of Packages */}
+            {currentStep === 5 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  Number of {transitType?.name || 'Packages'}
+                </Text>
+                <Text style={styles.cardDescription}>
+                  Enter the quantity of items received
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={numberOfPackages}
+                  onChangeText={setNumberOfPackages}
+                  keyboardType="numeric"
+                  placeholder="Enter number of packages"
+                  placeholderTextColor={COLORS.textLight}
+                />
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleSetPackages}
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* MRN Dialog */}
+            {showMrnDialog && (
+              <View style={styles.card}>
+                <View style={styles.alertContainer}>
+                  <Text style={styles.alertIcon}>⚠️</Text>
+                  <Text style={styles.alertTitle}>MRN Required</Text>
+                  <Text style={styles.alertText}>
+                    Does the haulier have an MRN (Movement Reference Number)?
+                  </Text>
+                  
+                  <View style={styles.alertButtonsContainer}>
+                    <TouchableOpacity
+                      style={[styles.alertButton, styles.alertButtonNo]}
+                      onPress={() => handleMrnResponse(false)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.alertButtonNoText}>No</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.alertButton, styles.alertButtonYes]}
+                      onPress={() => handleMrnResponse(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.alertButtonYesText}>Yes</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            )}
+            
+            {/* Step 6: Enter MRN */}
+            {currentStep === 6 && haulierCanProvideMrn && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Enter MRN/GMR ID</Text>
+                <Text style={styles.cardDescription}>
+                  Enter the Movement Reference Number provided by the haulier
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={mrn}
+                  onChangeText={setMrn}
+                  placeholder="Enter MRN/GMR ID"
+                  placeholderTextColor={COLORS.textLight}
+                />
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleSetMrn}
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 7: Capture MRN Document Photo */}
+            {haulierCanProvideMrn && mrn && currentStep === 7 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Capture MRN Document Photo</Text>
+                <Text style={styles.cardDescription}>
+                  Take a photo of the MRN document provided by the haulier
+                </Text>
+                
+                <ModernButton
+                  title="Take Photo of MRN Document"
+                  onPress={captureMrnDocPhoto}
+                  style={styles.cameraButton}
+                />
+              </View>
+            )}
+            
+            {/* Step 7/8: Capture Container Photo */}
+            {currentStep === 7 || (haulierCanProvideMrn && currentStep === 8) ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Capture Container Photo</Text>
+                <Text style={styles.cardDescription}>
+                  Take a photo of the delivery container
+                </Text>
+                
+                <ModernButton
+                  title={`Take Photo #1`}
+                  onPress={captureContainerPhoto}
+                  style={styles.cameraButton}
+                />
+              </View>
+            ) : null}
+            
+            {/* Step 8/9: Capture Product Photo */}
+            {currentStep === 8 || (haulierCanProvideMrn && currentStep === 9) ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Capture Product Photo</Text>
+                <Text style={styles.cardDescription}>
+                  Take a photo of the delivered products
+                </Text>
+                
+                <ModernButton
+                  title={`Take Photo #2`}
+                  onPress={captureProductPhoto}
+                  style={styles.cameraButton}
+                />
+              </View>
+            ) : null}
+            
+            {/* Step 9/10: Enter Receipt Lane */}
+            {currentStep === 9 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Enter Receipt Lane</Text>
+                <Text style={styles.cardDescription}>
+                  Specify the storage lane where the items will be received
+                </Text>
+                
+                <TextInput
+                  style={styles.input}
+                  value={receiptLane}
+                  onChangeText={setReceiptLane}
+                  placeholder="Enter receipt lane"
+                  placeholderTextColor={COLORS.textLight}
+                  autoCapitalize="characters"
+                />
+                
+                <ModernButton
+                  title="Confirm"
+                  onPress={handleSetReceiptLane}
+                  style={styles.button}
+                />
+              </View>
+            )}
+            
+            {/* Step 10: Select Printer */}
+            {currentStep === 10 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Select Label Printer</Text>
+                <Text style={styles.cardDescription}>
+                  Choose a printer to generate the inbound label
+                </Text>
+                
+                <View style={styles.printersContainer}>
+                  {availablePrinters.map((printerItem) => (
+                    <TouchableOpacity
+                      key={printerItem.value}
+                      style={styles.printerButton}
+                      onPress={() => handleSelectPrinter(printerItem)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.printerIcon}>🖨️</Text>
+                      <Text style={styles.printerText}>{printerItem.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+            
+            {/* Step 11: Complete Inbound */}
+            {currentStep === 11 && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Complete Inbound</Text>
+                <Text style={styles.cardDescription}>
+                  Process this unknown inbound shipment
+                </Text>
+                
+                <View style={styles.summaryList}>
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Company:</Text>
+                    <Text style={styles.summaryItemValue}>{selectedCompany?.companyName}</Text>
+                  </View>
+                  
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Carrier:</Text>
+                    <Text style={styles.summaryItemValue}>{carrierName}</Text>
+                  </View>
+                  
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Transit Type:</Text>
+                    <Text style={styles.summaryItemValue}>{transitType?.name}</Text>
+                  </View>
+                  
+                  {containerType && (
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryItemLabel}>Container Type:</Text>
+                      <Text style={styles.summaryItemValue}>{containerType.text}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Quantity:</Text>
+                    <Text style={styles.summaryItemValue}>{numberOfPackages}</Text>
+                  </View>
+                  
+                  {mrn && (
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryItemLabel}>MRN:</Text>
+                      <Text style={styles.summaryItemValue}>{mrn}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Receipt Lane:</Text>
+                    <Text style={styles.summaryItemValue}>{receiptLane.toUpperCase()}</Text>
+                  </View>
+                  
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryItemLabel}>Printer:</Text>
+                    <Text style={styles.summaryItemValue}>{printer?.name}</Text>
+                  </View>
+                </View>
+                
+                <ModernButton
+                  title="Complete Unknown Inbound"
+                  onPress={handleSubmitInbound}
+                  style={styles.submitButton}
+                />
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+        
+        {/* Loading Overlay */}
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Processing...</Text>
             </View>
-          )}
-          
-          {/* Step 11: Complete Inbound */}
-          {currentStep === 11 && (
-            <View style={styles.stepContainer}>
-              <Button
-                title="Complete Unknown Inbound"
-                onPress={handleSubmitInbound}
-                style={styles.successButton}
-              />
-            </View>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Page>
+          </View>
+        )}
+      </Animated.View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  warehouseText: {
+    color: COLORS.primary,
+  },
+  headerPlaceholder: {
+    width: 40,
+  },
   keyboardAvoidingView: {
     flex: 1,
   },
@@ -672,175 +967,390 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxxl,
+    padding: 16,
+    paddingBottom: 50,
   },
-  stepContainer: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.small,
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  stepTitle: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.semibold as any,
-    color: colors.text,
-    marginBottom: spacing.md,
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  cardDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 20,
     textAlign: 'center',
   },
   searchInput: {
-    backgroundColor: colors.inputBackground,
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
-    fontSize: typography.fontSizes.regular,
-    marginBottom: spacing.md,
+    borderColor: COLORS.border,
   },
   companiesList: {
-    maxHeight: 300,
+    marginTop: 8,
+    maxHeight: 400,
   },
-  companyItem: {
+  companyCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  companyCardContent: {
+    flex: 1,
+    padding: 12,
+  },
+  companyName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  companyCodeContainer: {
+    flexDirection: 'row',
+  },
+  companyCode: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  selectButtonContainer: {
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  selectButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyStateIcon: {
+    fontSize: 40,
+    marginBottom: 16,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    textAlign: 'center',
+  },
+  summaryCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginBottom: 20,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  summaryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    marginBottom: 8,
   },
-  companyName: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    flex: 1,
+  summaryTitle: {
+    fontSize: 14,
+    color: COLORS.textLight,
   },
-  companyCode: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.textSecondary,
-    marginLeft: spacing.sm,
+  editButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 169, 181, 0.1)',
   },
-  emptyText: {
-    color: colors.textLight,
-    textAlign: 'center',
-    padding: spacing.lg,
+  editButtonText: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '600',
   },
-  summaryCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.small,
+  summaryContent: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  summaryLabel: {
-    fontSize: typography.fontSizes.medium,
-    fontWeight: typography.fontWeights.medium as any,
-    color: colors.textSecondary,
-    marginRight: spacing.xs,
-  },
   summaryValue: {
-    fontSize: typography.fontSizes.medium,
-    fontWeight: typography.fontWeights.semibold as any,
-    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
     flex: 1,
   },
-  summaryCode: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.primary,
+  companyCodeBadge: {
+    backgroundColor: 'rgba(0, 169, 181, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
   },
-  input: {
-    backgroundColor: colors.inputBackground,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: spacing.md,
-    fontSize: typography.fontSizes.regular,
-    marginBottom: spacing.md,
+  companyCodeBadgeText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '600',
   },
-  button: {
-    marginTop: spacing.xs,
+  photoPreviewCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginBottom: 20,
+    padding: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  optionItem: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: 8,
-    marginBottom: spacing.sm,
-  },
-  optionText: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    textAlign: 'center',
+  photoPreviewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 12,
   },
   photoPreviewContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
+    justifyContent: 'space-around',
   },
   photoItem: {
     alignItems: 'center',
-    margin: spacing.xs,
-  },
-  photoLabel: {
-    fontSize: typography.fontSizes.small,
-    color: colors.textSecondary,
-    marginBottom: spacing.xxs,
+    margin: 8,
   },
   photoThumbnail: {
-    width: 75,
-    height: 75,
-    borderRadius: 4,
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginBottom: 6,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: COLORS.border,
+  },
+  photoLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  input: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  button: {
+    marginTop: 8,
+  },
+  transitTypeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginHorizontal: -4,
+  },
+  transitTypeButton: {
+    width: '48%',
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  transitTypeIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  transitTypeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  containerTypeButton: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  containerTypeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
   },
   alertContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.warning,
+    alignItems: 'center',
+  },
+  alertIcon: {
+    fontSize: 40,
+    marginBottom: 16,
   },
   alertTitle: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
-    marginBottom: spacing.sm,
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 12,
   },
   alertText: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    marginBottom: spacing.md,
+    fontSize: 16,
+    color: COLORS.text,
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   alertButtonsContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    width: '100%',
   },
   alertButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 4,
-    marginLeft: spacing.sm,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 8,
+    maxWidth: 120,
   },
-  alertButtonCancel: {
-    backgroundColor: colors.surface,
+  alertButtonNo: {
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: COLORS.border,
   },
-  alertButtonConfirm: {
-    backgroundColor: colors.primary,
+  alertButtonNoText: {
+    color: COLORS.text,
+    fontWeight: '600',
   },
-  alertButtonText: {
-    color: colors.text,
-    fontWeight: typography.fontWeights.medium as any,
+  alertButtonYes: {
+    backgroundColor: COLORS.primary,
+  },
+  alertButtonYesText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  cameraButton: {
+    backgroundColor: COLORS.primary,
+  },
+  printersContainer: {
+    marginTop: 8,
   },
   printerButton: {
-    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  successButton: {
-    backgroundColor: colors.success,
+  printerIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  printerText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORS.text,
+  },
+  summaryList: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    padding: 12,
+  },
+  summaryItemLabel: {
+    width: 120,
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  summaryItemValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  submitButton: {
+    backgroundColor: COLORS.primary,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingContainer: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
   },
 });
 
-export default UnknownInboundScreen;
+export default ModernUnknownInboundScreen;

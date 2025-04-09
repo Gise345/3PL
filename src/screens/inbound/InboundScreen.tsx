@@ -3,41 +3,43 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   TextInput,
   Alert,
   ActivityIndicator,
-  ScrollView,
+  FlatList,
+  Animated,
+  Platform,
+  StatusBar,
   RefreshControl
 } from 'react-native';
-import { Page } from '../../components/common';
-import { colors, typography, spacing, shadows} from '../../utils/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { InboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api/inboundService';
+import { ModernButton } from '../../components/common';
+import { Inbound } from '../../types/inbound';
+import { formatDate } from '../../utils/dateUtils';
 
-// Define interfaces for our data
-interface Inbound {
-  poNumber: string;
-  inboundId: string;
-  companyName: string;
-  companyCode: string;
-  warehouse: string;
-  requestedDate: string;
-  timeSlot: string;
-  transitType: string;
-  containerType: string;
-  numberPallets?: number;
-  numberCartons?: number;
-  inboundService: string;
-  mrnRequired: boolean;
-  mrn?: string;
-}
+// Define modern color palette with teal primary color to match other screens
+const COLORS = {
+  background: '#F5F7FA',
+  card: '#FFFFFF',
+  cardActive: '#F0F9F6',
+  primary: '#00A9B5', // Teal color matching login screen
+  secondary: '#333333',
+  accent: '#ff6f00',
+  text: '#333333',
+  textLight: '#888888',
+  border: '#E0E0E0',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  success: '#4CD964',
+  surface: '#F5F7FA',
+  inputBackground: '#F5F7FA',
+};
 
-const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
+const ModernInboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const { warehouse } = useAppSelector((state) => state.settings);
-  const { user } = useAppSelector((state) => state.auth);
   
   // State management
   const [loading, setLoading] = useState(true);
@@ -45,15 +47,35 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const [filteredInbounds, setFilteredInbounds] = useState<Inbound[]>([]);
   const [searchPhrase, setSearchPhrase] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [selectMode, setSelectMode] = useState(true);
-  const [selectedInbound, setSelectedInbound] = useState<Inbound | null>(null);
   
-  // Scroll view ref to handle scrolling
-  const scrollViewRef = useRef<ScrollView>(null);
+  // Animation values
+  const [fadeIn] = useState(new Animated.Value(0));
+  const [slideUp] = useState(new Animated.Value(30));
+  const [titleScale] = useState(new Animated.Value(0.95));
   
   // Load inbounds on component mount and when warehouse changes
   useEffect(() => {
     getInbounds();
+    
+    // Animate components on mount
+    Animated.parallel([
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideUp, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(titleScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [warehouse]);
   
   const getInbounds = async () => {
@@ -91,10 +113,6 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   };
   
   const handleReceiveInbound = (inbound: Inbound) => {
-    setSelectedInbound(inbound);
-    setSelectMode(false);
-    
-    // Navigate to InboundDetailScreen with the selected inbound
     navigation.navigate('InboundDetail', { inbound });
   };
   
@@ -102,234 +120,380 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     navigation.navigate('UnknownInbound');
   };
 
-  // Render an individual inbound item
+  // Render an individual inbound item with modern styling
   const renderInboundItem = ({ item }: { item: Inbound }) => (
     <TouchableOpacity
       style={styles.inboundItem}
       onPress={() => handleReceiveInbound(item)}
+      activeOpacity={0.7}
     >
       <View style={styles.inboundHeader}>
         <Text style={styles.poNumber}>{item.poNumber}</Text>
-        <Text style={styles.inboundService}>{item.inboundService}</Text>
-      </View>
-      
-      <View style={styles.inboundRow}>
-        <Text style={styles.inboundLabel}>Warehouse:</Text>
-        <Text style={styles.inboundValue}>{item.warehouse}</Text>
-        <Text style={styles.inboundDate}>{item.requestedDate}</Text>
-        <Text style={styles.timeSlot}>{item.timeSlot}</Text>
-      </View>
-      
-      <View style={styles.inboundRow}>
-        <Text style={styles.inboundLabel}>Company:</Text>
-        <Text style={styles.inboundValue}>{item.companyName}</Text>
-      </View>
-      
-      <View style={styles.inboundRow}>
-        <Text style={styles.inboundLabel}>Transit Type:</Text>
-        <Text style={styles.inboundValue}>{item.transitType}</Text>
-      </View>
-      
-      <View style={styles.inboundRow}>
-        <Text style={styles.inboundLabel}>Container Type:</Text>
-        <Text style={styles.inboundValue}>{item.containerType}</Text>
-      </View>
-      
-      {item.numberPallets && (
-        <View style={styles.inboundRow}>
-          <Text style={styles.inboundLabel}>Number of Pallets:</Text>
-          <Text style={styles.inboundValue}>{item.numberPallets}</Text>
+        <View style={styles.serviceTag}>
+          <Text style={styles.serviceTagText}>{item.inboundService}</Text>
         </View>
-      )}
+      </View>
       
-      {item.numberCartons && (
-        <View style={styles.inboundRow}>
-          <Text style={styles.inboundLabel}>Number of Cartons:</Text>
-          <Text style={styles.inboundValue}>{item.numberCartons}</Text>
+      <View style={styles.inboundDetails}>
+        <View style={styles.detailRow}>
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Warehouse</Text>
+            <Text style={styles.detailValue}>{item.warehouse}</Text>
+          </View>
+          
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Scheduled</Text>
+            <Text style={styles.detailValue}>
+              {item.requestedDate} • {item.timeSlot}
+            </Text>
+          </View>
         </View>
-      )}
+        
+        <View style={styles.divider} />
+        
+        <View style={styles.detailRow}>
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Company</Text>
+            <Text style={styles.detailValue}>{item.companyName}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.divider} />
+        
+        <View style={styles.detailRow}>
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Transit Type</Text>
+            <Text style={styles.detailValue}>{item.transitType}</Text>
+          </View>
+          
+          <View style={styles.detailContainer}>
+            <Text style={styles.detailLabel}>Container</Text>
+            <Text style={styles.detailValue}>{item.containerType}</Text>
+          </View>
+        </View>
+        
+        {(item.numberPallets || item.numberCartons) && (
+          <>
+            <View style={styles.divider} />
+            
+            <View style={styles.detailRow}>
+              {item.numberPallets && (
+                <View style={styles.detailContainer}>
+                  <Text style={styles.detailLabel}>Pallets</Text>
+                  <Text style={styles.detailValue}>{item.numberPallets}</Text>
+                </View>
+              )}
+              
+              {item.numberCartons && (
+                <View style={styles.detailContainer}>
+                  <Text style={styles.detailLabel}>Cartons</Text>
+                  <Text style={styles.detailValue}>{item.numberCartons}</Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+      </View>
       
-      <TouchableOpacity 
-        style={styles.receiveButton}
+      <ModernButton
+        title="Receive Inbound"
         onPress={() => handleReceiveInbound(item)}
-      >
-        <Text style={styles.receiveButtonText}>Receive Inbound</Text>
-      </TouchableOpacity>
+        variant="primary"
+        size="small"
+        style={styles.receiveButton}
+      />
     </TouchableOpacity>
   );
   
   // Render the empty state when no results are found
   const renderEmptyState = () => (
     <View style={styles.emptyStateContainer}>
-      <Text style={styles.emptyStateText}>
+      <Text style={styles.emptyStateIcon}>📦</Text>
+      <Text style={styles.emptyStateTitle}>
         {searchPhrase
           ? `No results found for "${searchPhrase}"`
           : "No scheduled inbounds available"}
       </Text>
+      <Text style={styles.emptyStateDescription}>
+        You can process an unknown inbound delivery instead
+      </Text>
       
-      <TouchableOpacity
-        style={styles.unknownInboundButton}
+      <ModernButton
+        title="Land Unknown Inbound"
         onPress={handleUnknownInbound}
-      >
-        <Text style={styles.unknownInboundButtonText}>Land Unknown Inbound</Text>
-      </TouchableOpacity>
+        variant="primary"
+        style={styles.unknownInboundButton}
+      />
     </View>
   );
 
   return (
-    <Page
-      title={`Inbound (${warehouse})`}
-      showHeader
-      showBackButton
-    >
-      {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <View style={styles.container}>
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search PO Number..."
-              value={searchPhrase}
-              onChangeText={onSearchChange}
-              autoCapitalize="none"
-            />
-          </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      
+      <Animated.View 
+        style={[
+          styles.container,
+          { 
+            opacity: fadeIn,
+            transform: [{ translateY: slideUp }]
+          }
+        ]}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
           
-          {/* Inbounds List */}
-          {filteredInbounds.length > 0 ? (
-            <FlatList
-              data={filteredInbounds}
-              renderItem={renderInboundItem}
-              keyExtractor={(item) => item.poNumber}
-              contentContainerStyle={styles.listContent}
-              refreshControl={
-                <RefreshControl 
-                  refreshing={refreshing} 
-                  onRefresh={onRefresh}
-                  colors={[colors.primary]}
-                />
-              }
-            />
-          ) : (
-            renderEmptyState()
-          )}
+          <Animated.Text 
+            style={[
+              styles.headerTitle,
+              { transform: [{ scale: titleScale }] }
+            ]}
+          >
+            <Text style={styles.headerTitleText}>Inbound </Text>
+            <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
+          </Animated.Text>
+          
+          <View style={styles.headerRight} />
         </View>
-      )}
-    </Page>
+        
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search PO Number..."
+            value={searchPhrase}
+            onChangeText={onSearchChange}
+            autoCapitalize="none"
+            placeholderTextColor={COLORS.textLight}
+          />
+        </View>
+        
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          </View>
+        ) : (
+          <>
+            {/* Inbounds List */}
+            {filteredInbounds.length > 0 ? (
+              <FlatList
+                data={filteredInbounds}
+                renderItem={renderInboundItem}
+                keyExtractor={(item) => item.poNumber}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl 
+                    refreshing={refreshing} 
+                    onRefresh={onRefresh}
+                    colors={[COLORS.primary]}
+                    tintColor={COLORS.primary}
+                  />
+                }
+              />
+            ) : (
+              renderEmptyState()
+            )}
+          </>
+        )}
+      </Animated.View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
   container: {
     flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerTitleText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  warehouseText: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  headerRight: {
+    width: 40,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  searchInput: {
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  searchContainer: {
-    padding: spacing.md,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  searchInput: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    padding: spacing.md,
-    fontSize: typography.fontSizes.regular,
-  },
   listContent: {
-    padding: spacing.md,
+    padding: 16,
+    paddingBottom: 100, // Add extra padding at bottom for better scrolling
   },
   inboundItem: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: 8,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.small,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   inboundHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   poNumber: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  inboundService: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.primary,
+  serviceTag: {
+    backgroundColor: 'rgba(0, 169, 181, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
   },
-  inboundRow: {
+  serviceTagText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  inboundDetails: {
+    padding: 16,
+  },
+  detailRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
+    justifyContent: 'space-between',
     flexWrap: 'wrap',
   },
-  inboundLabel: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.textLight,
-    marginRight: spacing.xs,
-    minWidth: 120,
+  detailContainer: {
+    minWidth: '48%',
+    marginBottom: 8,
   },
-  inboundValue: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
-    flex: 1,
+  detailLabel: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 4,
   },
-  inboundDate: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.textSecondary,
+  detailValue: {
+    fontSize: 16,
+    color: COLORS.text,
+    fontWeight: '500',
   },
-  timeSlot: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: 8,
   },
   receiveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: spacing.sm,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  receiveButtonText: {
-    color: 'white',
-    fontWeight: typography.fontWeights.medium as any,
-    fontSize: typography.fontSizes.medium,
+    margin: 16,
+    marginTop: 0,
   },
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.xl,
+    padding: 32,
   },
-  emptyStateText: {
-    fontSize: typography.fontSizes.large,
-    color: colors.textLight,
+  emptyStateIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: 8,
+  },
+  emptyStateDescription: {
+    fontSize: 16,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    marginBottom: 24,
   },
   unknownInboundButton: {
-    backgroundColor: colors.secondary,
-    borderRadius: 8,
-    padding: spacing.md,
-    alignItems: 'center',
     width: '80%',
-  },
-  unknownInboundButtonText: {
-    color: 'white',
-    fontWeight: typography.fontWeights.medium as any,
-    fontSize: typography.fontSizes.medium,
+    marginTop: 16,
   },
 });
 
-export default InboundScreen;
+export default ModernInboundScreen;

@@ -669,7 +669,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    backgroundColor: 'rgba(0, 169, 181, 0.1)', // Changed from red to teal
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 12,
@@ -686,6 +686,7 @@ const styles = StyleSheet.create({
       },
     }),
   },
+
   logoutIcon: {
     fontSize: 18,
     marginRight: 10,
@@ -693,7 +694,7 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 16,
     fontWeight: '600',
-    color: COLORS.danger,
+    color: COLORS.primary, // Changed from danger to primary
   },
   versionText: {
     fontSize: 12,

@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   loadButton: {
-    width: 80,
+    width: 100,
     borderRadius: 8,
   },
   header: {

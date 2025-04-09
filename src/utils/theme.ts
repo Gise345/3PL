@@ -1,7 +1,7 @@
 // Color palette with modernized colors
 export const colors = {
   // Primary colors
-  primary: '#53ba82', // Green from the old app (keeping for brand consistency)
+  primary: '#00A9B5', // teal
   secondary: '#1859e6', // Blue
   accent: '#ff6f00', // Orange
 
