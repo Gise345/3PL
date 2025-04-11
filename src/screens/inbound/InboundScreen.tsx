@@ -16,7 +16,7 @@ import {
   KeyboardAvoidingView
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Page, Button, Input, PhotoCapture, PhotoGrid, Signature } from '../../components/common';
+import { Page, Button, Input, PhotoCapture, PhotoGrid } from '../../components/common';
 import { InboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api';
@@ -65,9 +65,6 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const [productPhotoName, setProductPhotoName] = useState('');
   const [mrnDocPhotoName, setMrnDocPhotoName] = useState('');
   
-  // State for signature
-  const [signatureName, setSignatureName] = useState('');
-  const [signatureImage, setSignatureImage] = useState<string | null>(null);
   
   // State for receipt lane
   const [receiptLane, setReceiptLane] = useState('');
@@ -92,6 +89,67 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const [fadeIn] = useState(new Animated.Value(0));
   const [slideUp] = useState(new Animated.Value(30));
   const [titleScale] = useState(new Animated.Value(0.95));
+
+  //  Printer State and Validation
+  const [printerName, setPrinterName] = useState('Door Printer');
+  const [printerValue, setPrinterValue] = useState('printer1');
+  const [receiptLaneError, setReceiptLaneError] = useState('');
+  const [receiptLaneVerified, setReceiptLaneVerified] = useState(false);
+
+  const validateReceiptLane = async () => {
+    if (!receiptLane.trim()) {
+      setReceiptLaneError('Please enter a receipt lane');
+      return false;
+    }
+    
+    try {
+      setLoading(true);
+      const response = await inboundService.checkGoodsInLaneExists(receiptLane);
+      
+      if (response.success === 200) {
+        setReceiptLaneError('');
+        setReceiptLaneVerified(true);
+        // Automatically set the Door Printer when lane is verified
+        setPrinterName('Door Printer');
+        setPrinterValue('printer1');
+        return true;
+      } else {
+        setReceiptLaneError(response.message || 'Invalid receipt lane');
+        setReceiptLaneVerified(false);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error validating receipt lane:', error);
+      setReceiptLaneError('Failed to verify receipt lane');
+      setReceiptLaneVerified(false);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const validateRequiredFields = () => {
+    const missingFields = [];
+    
+    if (!selectedInbound?.companyCode) missingFields.push('Company Code');
+    if (!selectedInbound?.poNumber) missingFields.push('PO Number');
+    if (!receiptLane) missingFields.push('Receipt Lane');
+    if (!numberOfPackages) missingFields.push('Number of Packages');
+    if (!selectedInbound?.transitType) missingFields.push('Transit Type');
+    if (!printerValue) missingFields.push('Printer');
+    
+    if (missingFields.length > 0) {
+      Alert.alert(
+        'Missing Required Fields',
+        `The following fields are required for label printing:\n${missingFields.join('\n')}`,
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+    
+    return true;
+  };
+  
   
   useEffect(() => {
     fetchInbounds();
@@ -218,15 +276,24 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     moveToBottom();
   };
   
-  const handleSignatureCapture = (uri: string, name: string) => {
-    setSignatureName(name);
-    setSignatureImage(uri);
-    moveToBottom();
-  };
   
-  const   handleSubmitInbound = async () => {
+  const handleSubmitInbound = async () => {
+    // Validate receipt lane if not already verified
+    if (!receiptLaneVerified) {
+      const isValid = await validateReceiptLane();
+      if (!isValid) return;
+    }
+
+     // Validate all required fields
+    if (!validateRequiredFields()) return;
+    
+    if (photos.length < 2) {
+      Alert.alert('Error', 'Please capture all required photos');
+      return;
+    }
+    
     if (!receiptLane) {
-      Alert.alert('Error', 'Please enter a receipt lane');
+      setReceiptLaneError('Please enter a receipt lane');
       return;
     }
     
@@ -234,32 +301,16 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
       Alert.alert('Error', 'Please capture all required photos');
       return;
     }
-
-    if (!signatureImage) {
-      Alert.alert('Error', 'Please capture driver signature');
+    
+    if (!printerValue) {
+      Alert.alert('Error', 'Printer selection is required');
       return;
     }
     
     setLoading(true);
-    
     try {
-      // In a real implementation, you would submit the inbound with all captured data
-      const data: {
-        warehouse: any;
-        poNumber: any;
-        companyCode: any;
-        inboundItemsPhoto: string;
-        transitTypePhoto: string;
-        timeReceived: string;
-        receiptLane: string;
-        inbound: any;
-        printerName: string;
-        landedDate: string;
-        transitType: any;
-        numberOfPackages: number | null;
-        mrn?: string;
-        haulierMrnDocPhoto?: string;
-      } = {
+      // Prepare data with all required fields
+      const data = {
         warehouse: selectedInbound.warehouse,
         poNumber: selectedInbound.poNumber,
         companyCode: selectedInbound.companyCode,
@@ -268,39 +319,45 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
         timeReceived: new Date().toISOString(),
         receiptLane: receiptLane.toUpperCase(),
         inbound: selectedInbound,
-        printerName: 'printer1', // This would come from settings in a real implementation
+        printerName: printerValue, // Use the printer value for API
         landedDate: new Date().toISOString().split('T')[0].split('-').join(''),
         transitType: selectedInbound.transitType,
         numberOfPackages: numberOfPackages,
+        mrn: mrn,
+        haulierMrnDocPhoto: mrnDocPhotoName,
         // landedBy: user.email, // This would come from auth state in a real implementation
       };
-
+      
+      // Add MRN if required
       if (selectedInbound.mrnRequired && mrn) {
         data.mrn = mrn;
         data.haulierMrnDocPhoto = mrnDocPhotoName;
       }
-
-      // Simulating successful submission
-      setTimeout(() => {
-        Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
-        resetForm();
-        setLoading(false);
-      }, 1500);
+      
+      // Submit the inbound
+      const response = await inboundService.submitInbound(data);
+      
+      Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
+      resetForm();
     } catch (error) {
       console.error('Error submitting inbound:', error);
       Alert.alert('Error', 'Failed to process inbound');
+    } finally {
       setLoading(false);
     }
   };
+  
 
   const resetForm = () => {
     setPhotos([]);
     setTransitPhotoName('');
     setProductPhotoName('');
     setMrnDocPhotoName('');
-    setSignatureName('');
-    setSignatureImage(null);
     setReceiptLane('');
+    setReceiptLaneError('');
+    setReceiptLaneVerified(false);
+    setPrinterName('Door Printer');
+    setPrinterValue('printer1');
     setSelectedInbound(null);
     setShowDetails(false);
     setShowSearch(true);
@@ -663,42 +720,47 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
                       )}
                     </View>
 
-                    {/* Receipt Lane Section */}
+                   
+                    {/* Receipt Lane Section with Validation */}
                     <View style={styles.sectionCard}>
                       <Text style={styles.sectionTitle}>Receipt Lane</Text>
-                      
                       <View style={styles.inputContainer}>
                         <TextInput
-                          style={styles.input}
+                          style={[styles.input, receiptLaneError ? { borderColor: COLORS.error } : null]}
                           value={receiptLane}
-                          onChangeText={setReceiptLane}
-                          placeholder="Enter Receipt Lane"
+                          onChangeText={(text) => {
+                            setReceiptLane(text);
+                            setReceiptLaneVerified(false); // Reset verification when text changes
+                          }}
+                          placeholder="Enter receipt lane"
                           placeholderTextColor={COLORS.textLight}
                           autoCapitalize="characters"
                         />
+                        {receiptLaneError ? (
+                          <Text style={styles.errorText}>{receiptLaneError}</Text>
+                        ) : null}
                       </View>
-                    </View>
-
-                    {/* Signature Section */}
-                    <View style={styles.sectionCard}>
-                      <Text style={styles.sectionTitle}>Driver's Signature</Text>
                       
-                      {signatureImage ? (
-                        <View style={styles.signatureComplete}>
-                          <Image 
-                            source={{ uri: signatureImage }} 
-                            style={styles.signatureImage} 
-                            resizeMode="contain"
-                          />
+                      <TouchableOpacity
+                        style={styles.confirmButton}
+                        onPress={validateReceiptLane}
+                      >
+                        <Text style={styles.confirmButtonText}>Verify Lane</Text>
+                      </TouchableOpacity>
+                      
+                      {receiptLaneVerified && (
+                        <View style={styles.printerInfoContainer}>
+                          <Text style={styles.printerInfoTitle}>Printer Selected:</Text>
+                          <View style={styles.printerInfoCard}>
+                            <Text style={styles.printerName}>{printerName}</Text>
+                            <Text style={styles.printerStatus}>Ready</Text>
+                          </View>
                         </View>
-                      ) : (
-                        <Signature
-                          title="Driver's Signature"
-                          companyCode={selectedInbound.companyCode}
-                          onSignatureCaptured={handleSignatureCapture}
-                        />
                       )}
                     </View>
+
+
+                    
                     
                     {/* Submit Button */}
                     <TouchableOpacity
@@ -708,529 +770,554 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
                       <Text style={styles.submitButtonText}>Complete Inbound</Text>
                     </TouchableOpacity>
                   </>
+                    )}
+                  </View>
                 )}
-              </View>
-            )}
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              </Animated.View>
+            </ScrollView>
+          </KeyboardAvoidingView>
       
-      {/* Loading Overlay */}
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingOverlayText}>Processing...</Text>
-          </View>
-        </View>
-      )}
-    </SafeAreaView>
-  );
-};
+             {/* Loading Overlay */}
+             {loading && (
+                      <View style={styles.loadingOverlay}>
+                        <View style={styles.loadingBox}>
+                          <ActivityIndicator size="large" color={COLORS.primary} />
+                          <Text style={styles.loadingOverlayText}>Processing...</Text>
+                        </View>
+                      </View>
+                    )}
+                  </SafeAreaView>
+                );
+              };
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    backgroundColor: COLORS.background,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.card,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  backButtonText: {
-    fontSize: 24,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    paddingHorizontal: 10,
-  },
-  headerTitleText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  warehouseText: {
-    color: COLORS.primary,
-  },
-  headerPlaceholder: {
-    width: 40,
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 30,
-  },
-  searchContainer: {
-    padding: 16,
-  },
-  searchInput: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: COLORS.textLight,
-  },
-  inboundCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    marginBottom: 16,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  inboundHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  poNumber: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  serviceTag: {
-    backgroundColor: 'rgba(0, 169, 181, 0.1)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  serviceTagText: {
-    fontSize: 14,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  inboundDetails: {
-    padding: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  detailLabel: {
-    width: 100,
-    fontSize: 14,
-    color: COLORS.textLight,
-    fontWeight: '500',
-  },
-  detailValue: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.text,
-    fontWeight: '600',
-  },
-  cardFooter: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
-    alignItems: 'flex-end',
-  },
-  receiveButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  receiveButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyStateDescription: {
-    fontSize: 14,
-    color: COLORS.textLight,
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  unknownButton: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  unknownButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  detailsContainer: {
-    padding: 16,
-  },
-  inboundSummaryCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  companyName: {
-    fontSize: 16,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  poNumberLarge: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  summaryDetailsContainer: {
-    borderRadius: 12,
-    backgroundColor: COLORS.surface,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    padding: 12,
-  },
-  summaryLabel: {
-    width: 120,
-    fontSize: 15,
-    color: COLORS.textLight,
-    fontWeight: '500',
-  },
-  summaryValue: {
-    flex: 1,
-    fontSize: 15,
-    color: COLORS.text,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  sectionCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 16,
-  },
-  mrnFormCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  mrnWarningContainer: {
-    alignItems: 'center',
-  },
-  mrnWarningIcon: {
-    fontSize: 36,
-    marginBottom: 12,
-  },
-  mrnWarningTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: 8,
-  },
-  mrnWarningText: {
-    fontSize: 15,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: 16,
-    lineHeight: 22,
-  },
-  inputContainer: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  input: {
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  numberInput: {
-    backgroundColor: COLORS.inputBackground,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 18,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  confirmButton: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  confirmButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  mrnButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  mrnButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    marginHorizontal: 6,
-  },
-  mrnButtonPrimary: {
-    backgroundColor: COLORS.primary,
-  },
-  mrnButtonPrimaryText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  mrnButtonSecondary: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  mrnButtonSecondaryText: {
-    color: COLORS.text,
-    fontWeight: '600',
-    fontSize: 16,
-  },
-  signatureComplete: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 169, 181, 0.05)',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  signatureImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: 8,
-  },
-  submitButton: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  submitButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  loadingBox: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 16,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
-  },
-  loadingOverlayText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: 16,
-  },
+            
+
+
+          const styles = StyleSheet.create({
+            safeArea: {
+              flex: 1,
+              backgroundColor: COLORS.background,
+            },
+            header: {
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: 16,
+              paddingVertical: 16,
+              backgroundColor: COLORS.background,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                },
+                android: {
+                  elevation: 2,
+                },
+              }),
+            },
+            backButton: {
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: COLORS.card,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                },
+                android: {
+                  elevation: 2,
+                },
+              }),
+            },
+            backButtonText: {
+              fontSize: 24,
+              color: COLORS.primary,
+              fontWeight: '500',
+            },
+            headerTitle: {
+              flex: 1,
+              textAlign: 'center',
+              paddingHorizontal: 10,
+            },
+            headerTitleText: {
+              fontSize: 20,
+              fontWeight: '700',
+              color: COLORS.text,
+            },
+            warehouseText: {
+              color: COLORS.primary,
+            },
+            headerPlaceholder: {
+              width: 40,
+            },
+            keyboardAvoidingView: {
+              flex: 1,
+            },
+            scrollView: {
+              flex: 1,
+            },
+            scrollContent: {
+              paddingBottom: 30,
+            },
+            searchContainer: {
+              padding: 16,
+            },
+            searchInput: {
+              backgroundColor: COLORS.card,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              fontSize: 16,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 3,
+                },
+                android: {
+                  elevation: 1,
+                },
+              }),
+            },
+            loadingContainer: {
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+            },
+            loadingText: {
+              marginTop: 12,
+              fontSize: 16,
+              color: COLORS.textLight,
+            },
+            inboundCard: {
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              marginBottom: 16,
+              overflow: 'hidden',
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 8,
+                },
+                android: {
+                  elevation: 4,
+                },
+              }),
+            },
+            inboundHeader: {
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: 'rgba(0,0,0,0.05)',
+            },
+            poNumber: {
+              fontSize: 18,
+              fontWeight: '700',
+              color: COLORS.text,
+            },
+            serviceTag: {
+              backgroundColor: 'rgba(0, 169, 181, 0.1)',
+              paddingVertical: 4,
+              paddingHorizontal: 10,
+              borderRadius: 12,
+            },
+            serviceTagText: {
+              fontSize: 14,
+              color: COLORS.primary,
+              fontWeight: '500',
+            },
+            inboundDetails: {
+              padding: 16,
+            },
+            detailRow: {
+              flexDirection: 'row',
+              marginBottom: 8,
+            },
+            detailLabel: {
+              width: 100,
+              fontSize: 14,
+              color: COLORS.textLight,
+              fontWeight: '500',
+            },
+            detailValue: {
+              flex: 1,
+              fontSize: 14,
+              color: COLORS.text,
+              fontWeight: '600',
+            },
+            cardFooter: {
+              padding: 16,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(0,0,0,0.05)',
+              alignItems: 'flex-end',
+            },
+            receiveButton: {
+              backgroundColor: COLORS.primary,
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              borderRadius: 12,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                },
+                android: {
+                  elevation: 2,
+                },
+              }),
+            },
+            receiveButtonText: {
+              color: 'white',
+              fontWeight: '600',
+              fontSize: 14,
+            },
+            emptyStateContainer: {
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 32,
+            },
+            emptyStateIcon: {
+              fontSize: 48,
+              marginBottom: 16,
+            },
+            emptyStateTitle: {
+              fontSize: 18,
+              fontWeight: '700',
+              color: COLORS.text,
+              marginBottom: 8,
+              textAlign: 'center',
+            },
+            emptyStateDescription: {
+              fontSize: 14,
+              color: COLORS.textLight,
+              marginBottom: 24,
+              textAlign: 'center',
+            },
+            unknownButton: {
+              backgroundColor: COLORS.accent,
+              paddingVertical: 12,
+              paddingHorizontal: 20,
+              borderRadius: 12,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                },
+                android: {
+                  elevation: 2,
+                },
+              }),
+            },
+            unknownButtonText: {
+              color: 'white',
+              fontWeight: '600',
+              fontSize: 16,
+            },
+            detailsContainer: {
+              padding: 16,
+            },
+            inboundSummaryCard: {
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 8,
+                },
+                android: {
+                  elevation: 4,
+                },
+              }),
+            },
+            companyName: {
+              fontSize: 16,
+              color: COLORS.textLight,
+              textAlign: 'center',
+              marginBottom: 4,
+            },
+            poNumberLarge: {
+              fontSize: 22,
+              fontWeight: '700',
+              color: COLORS.text,
+              textAlign: 'center',
+              marginBottom: 16,
+            },
+            summaryDetailsContainer: {
+              borderRadius: 12,
+              backgroundColor: COLORS.surface,
+              overflow: 'hidden',
+              marginTop: 8,
+            },
+            summaryRow: {
+              flexDirection: 'row',
+              padding: 12,
+            },
+            summaryLabel: {
+              width: 120,
+              fontSize: 15,
+              color: COLORS.textLight,
+              fontWeight: '500',
+            },
+            summaryValue: {
+              flex: 1,
+              fontSize: 15,
+              color: COLORS.text,
+              fontWeight: '600',
+            },
+            divider: {
+              height: 1,
+              backgroundColor: COLORS.border,
+            },
+            sectionCard: {
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 8,
+                },
+                android: {
+                  elevation: 4,
+                },
+              }),
+            },
+            sectionTitle: {
+              fontSize: 18,
+              fontWeight: '700',
+              color: COLORS.text,
+              marginBottom: 16,
+            },
+            mrnFormCard: {
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 16,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 8,
+                },
+                android: {
+                  elevation: 4,
+                },
+              }),
+            },
+            mrnWarningContainer: {
+              alignItems: 'center',
+            },
+            mrnWarningIcon: {
+              fontSize: 36,
+              marginBottom: 12,
+            },
+            mrnWarningTitle: {
+              fontSize: 18,
+              fontWeight: '700',
+              color: COLORS.text,
+              marginBottom: 8,
+            },
+            mrnWarningText: {
+              fontSize: 15,
+              color: COLORS.text,
+              textAlign: 'center',
+              marginBottom: 16,
+              lineHeight: 22,
+            },
+            inputContainer: {
+              width: '100%',
+              marginBottom: 16,
+            },
+            input: {
+              backgroundColor: COLORS.inputBackground,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              fontSize: 16,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+            },
+            numberInput: {
+              backgroundColor: COLORS.inputBackground,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              fontSize: 18,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              marginBottom: 16,
+              textAlign: 'center',
+            },
+            confirmButton: {
+              backgroundColor: COLORS.primary,
+              borderRadius: 12,
+              paddingVertical: 12,
+              alignItems: 'center',
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                },
+                android: {
+                  elevation: 2,
+                },
+              }),
+            },
+            confirmButtonText: {
+              color: 'white',
+              fontSize: 16,
+              fontWeight: '600',
+            },
+            mrnButtonsContainer: {
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              width: '100%',
+            },
+            mrnButton: {
+              flex: 1,
+              paddingVertical: 12,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 12,
+              marginHorizontal: 6,
+            },
+            mrnButtonPrimary: {
+              backgroundColor: COLORS.primary,
+            },
+            mrnButtonPrimaryText: {
+              color: 'white',
+              fontWeight: '600',
+              fontSize: 16,
+            },
+            mrnButtonSecondary: {
+              backgroundColor: COLORS.surface,
+              borderWidth: 1,
+              borderColor: COLORS.border,
+            },
+            mrnButtonSecondaryText: {
+              color: COLORS.text,
+              fontWeight: '600',
+              fontSize: 16,
+            },
+            submitButton: {
+              backgroundColor: COLORS.accent,
+              borderRadius: 12,
+              paddingVertical: 16,
+              alignItems: 'center',
+              marginTop: 8,
+              marginBottom: 24,
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                },
+                android: {
+                  elevation: 4,
+                },
+              }),
+            },
+            submitButtonText: {
+              color: 'white',
+              fontSize: 18,
+              fontWeight: '700',
+            },
+            loadingOverlay: {
+              ...StyleSheet.absoluteFillObject,
+              backgroundColor: 'rgba(255, 255, 255, 0.8)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 1000,
+            },
+            loadingBox: {
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              padding: 24,
+              alignItems: 'center',
+              ...Platform.select({
+                ios: {
+                  shadowColor: COLORS.shadow,
+                  shadowOffset: { width: 0, height: 10 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 16,
+                },
+                android: {
+                  elevation: 10,
+                },
+              }),
+            },
+            loadingOverlayText: {
+              fontSize: 16,
+              fontWeight: '600',
+              color: COLORS.text,
+              marginTop: 16,
+            },
+              
+            printerInfoContainer: {
+              marginTop: 16,
+              borderRadius: 12,
+              overflow: 'hidden',
+            },
+            printerInfoTitle: {
+              fontSize: 14,
+              color: COLORS.textLight,
+              marginBottom: 8,
+            },
+            printerInfoCard: {
+              backgroundColor: 'rgba(0, 169, 181, 0.1)',
+              borderRadius: 12,
+              padding: 16,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            },
+            printerName: {
+              fontSize: 16,
+              fontWeight: '600',
+              color: COLORS.primary,
+            },
+            printerStatus: {
+              fontSize: 14,
+              color: COLORS.success,
+              fontWeight: '500',
+            },
+            errorText: {
+              color: COLORS.error,
+              fontSize: 14,
+              marginTop: 4,
+              marginBottom: 8,
+            },
+
 });
 
 export default InboundScreen;
