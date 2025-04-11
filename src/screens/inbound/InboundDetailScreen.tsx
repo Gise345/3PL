@@ -755,7 +755,7 @@ const ModernInboundDetailScreen: React.FC<InboundDetailScreenProps> = ({
                     <ModernButton
                       title="Print MRN Error Label"
                       onPress={handleSubmitMrnError}
-                      variant="warning"
+                      variant="primary"
                       style={styles.warningButton}
                     />
                   </>
