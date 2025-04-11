@@ -1,11 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Page, Button, Input, PhotoCapture, PhotoGrid, Signature } from '../../components/common';
-import { colors, typography, spacing, shadows } from '../../utils/theme';
 import { InboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api';
-import { MaterialIcons } from '@expo/vector-icons';
+
+// Define modern color palette with teal primary color to match other screens
+const COLORS = {
+  background: '#F5F7FA',
+  card: '#FFFFFF',
+  cardActive: '#F0F9F6',
+  primary: '#00A9B5', // Teal color matching login screen
+  secondary: '#333333',
+  accent: '#ff6f00',
+  text: '#333333',
+  textLight: '#888888',
+  border: '#E0E0E0',
+  shadow: 'rgba(0, 0, 0, 0.1)',
+  error: '#ff3b30',
+  success: '#4CD964',
+  warning: '#FFCC00',
+  surface: '#F5F7FA',
+  inputBackground: '#F5F7FA',
+};
+
+// Get screen dimensions for responsive sizing
+const { width, height } = Dimensions.get('window');
 
 interface InboundPhoto {
   uri: string;
@@ -15,6 +51,8 @@ interface InboundPhoto {
 
 const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const { warehouse } = useAppSelector((state) => state.settings);
+  
+  // State for inbounds
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [inbounds, setInbounds] = useState<any[]>([]);
@@ -29,6 +67,7 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   
   // State for signature
   const [signatureName, setSignatureName] = useState('');
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
   
   // State for receipt lane
   const [receiptLane, setReceiptLane] = useState('');
@@ -39,8 +78,43 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const [showMRNForm, setShowMRNForm] = useState(false);
   const [mrn, setMRN] = useState('');
   
+  // State for number of packages
+  const [numberOfPackages, setNumberOfPackages] = useState<number | null>(null);
+  const [numberPalletsTextDiv, setNumberPalletsTextDiv] = useState(false);
+  const [numberCartonsTextDiv, setNumberCartonsTextDiv] = useState(false);
+  const [numberPalletsDiv, setNumberPalletsDiv] = useState(false);
+  const [numberCartonsDiv, setNumberCartonsDiv] = useState(false);
+  
+  // Reference to scroll view
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Animation values
+  const [fadeIn] = useState(new Animated.Value(0));
+  const [slideUp] = useState(new Animated.Value(30));
+  const [titleScale] = useState(new Animated.Value(0.95));
+  
   useEffect(() => {
     fetchInbounds();
+    
+    // Animate components on mount
+    Animated.parallel([
+      Animated.timing(fadeIn, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideUp, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(titleScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, []);
   
   useEffect(() => {
@@ -58,8 +132,10 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     setLoading(true);
     try {
       const response = await inboundService.getInbounds({ warehouse });
-      setInbounds(response.data);
-      setFilteredInbounds(response.data);
+      if (response.data) {
+        setInbounds(response.data);
+        setFilteredInbounds(response.data);
+      }
     } catch (error) {
       console.error('Error fetching inbounds:', error);
       Alert.alert('Error', 'Failed to fetch inbound shipments');
@@ -73,10 +149,44 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     setShowSearch(false);
     setShowDetails(true);
     
-    // Check if MRN is required but not provided
-    if (inbound.mrnRequired && !inbound.mrn) {
-      setShowMRNForm(true);
+    // Handle the cartons or pallets confirmation
+    if (inbound.numberCartons) {
+      setNumberCartonsTextDiv(true);
+      setNumberPalletsTextDiv(false);
+      setNumberOfPackages(inbound.numberCartons);
+    } else if (inbound.numberPallets) {
+      setNumberPalletsTextDiv(true);
+      setNumberCartonsTextDiv(false);
+      setNumberOfPackages(inbound.numberPallets);
     }
+
+    // Scroll to top when showing details
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }, 100);
+  };
+
+  const setPallets = (value: number) => {
+    setNumberOfPackages(value);
+    setNumberPalletsTextDiv(false);
+    setNumberPalletsDiv(true);
+    checkMRNRequirement();
+  };
+
+  const setCartons = (value: number) => {
+    setNumberOfPackages(value);
+    setNumberCartonsTextDiv(false);
+    setNumberCartonsDiv(true);
+    checkMRNRequirement();
+  };
+
+  const checkMRNRequirement = () => {
+    if (selectedInbound && selectedInbound.mrnRequired && !selectedInbound.mrn) {
+      setShowMRNForm(true);
+    } else {
+      setShowMRNForm(false);
+    }
+    moveToBottom();
   };
   
   const handleMRNSubmit = () => {
@@ -87,28 +197,34 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     
     setShowMRNForm(false);
     // In a real implementation, you would update the inbound with the MRN
+    moveToBottom();
   };
   
   const handleTransitPhotoCapture = (uri: string, name: string) => {
     setTransitPhotoName(name);
     setPhotos(prev => [...prev, { uri, label: 'Transit', name }]);
+    moveToBottom();
   };
   
   const handleProductPhotoCapture = (uri: string, name: string) => {
     setProductPhotoName(name);
     setPhotos(prev => [...prev, { uri, label: 'Product', name }]);
+    moveToBottom();
   };
   
   const handleMRNDocPhotoCapture = (uri: string, name: string) => {
     setMrnDocPhotoName(name);
     setPhotos(prev => [...prev, { uri, label: 'MRN Document', name }]);
+    moveToBottom();
   };
   
   const handleSignatureCapture = (uri: string, name: string) => {
     setSignatureName(name);
+    setSignatureImage(uri);
+    moveToBottom();
   };
   
-  const handleSubmitInbound = async () => {
+  const   handleSubmitInbound = async () => {
     if (!receiptLane) {
       Alert.alert('Error', 'Please enter a receipt lane');
       return;
@@ -118,393 +234,1002 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
       Alert.alert('Error', 'Please capture all required photos');
       return;
     }
+
+    if (!signatureImage) {
+      Alert.alert('Error', 'Please capture driver signature');
+      return;
+    }
     
     setLoading(true);
     
     try {
       // In a real implementation, you would submit the inbound with all captured data
-      Alert.alert('Success', 'Inbound processing completed successfully');
-      // Reset form and go back to search
-      setPhotos([]);
-      setTransitPhotoName('');
-      setProductPhotoName('');
-      setMrnDocPhotoName('');
-      setSignatureName('');
-      setReceiptLane('');
-      setSelectedInbound(null);
-      setShowDetails(false);
-      setShowSearch(true);
+      const data: {
+        warehouse: any;
+        poNumber: any;
+        companyCode: any;
+        inboundItemsPhoto: string;
+        transitTypePhoto: string;
+        timeReceived: string;
+        receiptLane: string;
+        inbound: any;
+        printerName: string;
+        landedDate: string;
+        transitType: any;
+        numberOfPackages: number | null;
+        mrn?: string;
+        haulierMrnDocPhoto?: string;
+      } = {
+        warehouse: selectedInbound.warehouse,
+        poNumber: selectedInbound.poNumber,
+        companyCode: selectedInbound.companyCode,
+        inboundItemsPhoto: productPhotoName,
+        transitTypePhoto: transitPhotoName,
+        timeReceived: new Date().toISOString(),
+        receiptLane: receiptLane.toUpperCase(),
+        inbound: selectedInbound,
+        printerName: 'printer1', // This would come from settings in a real implementation
+        landedDate: new Date().toISOString().split('T')[0].split('-').join(''),
+        transitType: selectedInbound.transitType,
+        numberOfPackages: numberOfPackages,
+        // landedBy: user.email, // This would come from auth state in a real implementation
+      };
+
+      if (selectedInbound.mrnRequired && mrn) {
+        data.mrn = mrn;
+        data.haulierMrnDocPhoto = mrnDocPhotoName;
+      }
+
+      // Simulating successful submission
+      setTimeout(() => {
+        Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
+        resetForm();
+        setLoading(false);
+      }, 1500);
     } catch (error) {
       console.error('Error submitting inbound:', error);
       Alert.alert('Error', 'Failed to process inbound');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const resetForm = () => {
+    setPhotos([]);
+    setTransitPhotoName('');
+    setProductPhotoName('');
+    setMrnDocPhotoName('');
+    setSignatureName('');
+    setSignatureImage(null);
+    setReceiptLane('');
+    setSelectedInbound(null);
+    setShowDetails(false);
+    setShowSearch(true);
+    setNumberOfPackages(null);
+    setNumberPalletsTextDiv(false);
+    setNumberCartonsTextDiv(false);
+    setNumberPalletsDiv(false);
+    setNumberCartonsDiv(false);
+    setShowMRNForm(false);
+    setMRN('');
   };
   
   const handleBack = () => {
     if (showDetails) {
-      setShowDetails(false);
-      setShowSearch(true);
-      setSelectedInbound(null);
-      setPhotos([]);
+      resetForm();
     } else {
       navigation.goBack();
     }
   };
 
+  // Function to scroll to bottom of scroll view
+  const moveToBottom = () => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
   return (
-    <Page 
-      title={`Inbound (${warehouse})`} 
-      showHeader 
-      showBackButton
-      onBackPress={handleBack}
-      loading={loading}
-    >
-      <ScrollView style={styles.container}>
-        {showSearch && (
-          <View style={styles.searchContainer}>
-            <Input
-              label="Search PO Number"
-              value={searchText}
-              onChangeText={setSearchText}
-              containerStyle={styles.searchInput}
-            />
-            
-            {filteredInbounds.length > 0 ? (
-              filteredInbounds.map((inbound, index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.inboundItem}
-                  onPress={() => handleSelectInbound(inbound)}
-                >
-                  <View style={styles.inboundHeader}>
-                    <Text style={styles.poNumber}>{inbound.poNumber}</Text>
-                    <Text style={styles.service}>{inbound.inboundService}</Text>
-                  </View>
-                  
-                  <View style={styles.inboundDetails}>
-                    <Text>{inbound.warehouse} - {inbound.requestedDate} {inbound.timeSlot}</Text>
-                    <Text>Company: {inbound.companyName}</Text>
-                    <Text>Transit: {inbound.transitType}</Text>
-                    <Text>Container: {inbound.containerType}</Text>
-                    {inbound.numberPallets && <Text>Pallets: {inbound.numberPallets}</Text>}
-                    {inbound.numberCartons && <Text>Cartons: {inbound.numberCartons}</Text>}
-                  </View>
-                  
-                  <View style={styles.inboundActions}>
-                    <Button 
-                      title="Receive Inbound" 
-                      onPress={() => handleSelectInbound(inbound)}
-                      small
-                    />
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={styles.noResults}>
-                <Text style={styles.noResultsText}>
-                  {searchText ? `No results for "${searchText}"` : 'No inbounds available'}
-                </Text>
-                
-                <Button 
-                  title="Process Unknown Inbound" 
-                  onPress={() => navigation.navigate('UnknownInbound')}
-                  variant="secondary"
-                  style={styles.unknownButton}
-                />
-              </View>
-            )}
-          </View>
-        )}
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBack}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backButtonText}>←</Text>
+        </TouchableOpacity>
         
-        {showDetails && selectedInbound && (
-          <View style={styles.detailsContainer}>
-            <View style={styles.inboundSummary}>
-              <Text style={styles.companyName}>{selectedInbound.companyName}</Text>
-              <Text style={styles.poNumberLarge}>{selectedInbound.poNumber}</Text>
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Booking:</Text>
-                <Text style={styles.infoValue}>
-                  {selectedInbound.requestedDate} {selectedInbound.timeSlot}
-                </Text>
-              </View>
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Customer:</Text>
-                <Text style={styles.infoValue}>{selectedInbound.companyCode}</Text>
-              </View>
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Transit Type:</Text>
-                <Text style={styles.infoValue}>{selectedInbound.transitType}</Text>
-              </View>
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Container Type:</Text>
-                <Text style={styles.infoValue}>{selectedInbound.containerType}</Text>
-              </View>
-              
-              {selectedInbound.numberPallets && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Transit Items:</Text>
-                  <Text style={styles.infoValue}>{selectedInbound.numberPallets} Pallets</Text>
-                </View>
-              )}
-              
-              {selectedInbound.numberCartons && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Transit Items:</Text>
-                  <Text style={styles.infoValue}>{selectedInbound.numberCartons} Cartons</Text>
-                </View>
-              )}
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Service:</Text>
-                <Text style={styles.infoValue}>{selectedInbound.inboundService}</Text>
-              </View>
-            </View>
-            
-            {showMRNForm && (
-              <View style={styles.mrnForm}>
-                <Text style={styles.formSectionTitle}>MRN Required</Text>
-                <Text style={styles.mrnMessage}>
-                  Inbound {selectedInbound.poNumber} has arrived without an accompanying MRN (Movement Reference Number).
-                  Does the haulier have an MRN?
-                </Text>
-                
-                <Input
-                  label="MRN/GMR ID"
-                  value={mrn}
-                  onChangeText={setMRN}
+        <Animated.Text 
+          style={[
+            styles.headerTitle,
+            { transform: [{ scale: titleScale }] }
+          ]}
+        >
+          <Text style={styles.headerTitleText}>Inbound </Text>
+          <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
+        </Animated.Text>
+        
+        <View style={styles.headerPlaceholder} />
+      </View>
+      
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingView}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View 
+            style={{ 
+              opacity: fadeIn,
+              transform: [{ translateY: slideUp }]
+            }}
+          >
+            {showSearch && (
+              <View style={styles.searchContainer}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search by PO Number..."
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  placeholderTextColor={COLORS.textLight}
                 />
                 
-                <View style={styles.mrnButtons}>
-                  <Button
-                    title="Confirm"
-                    onPress={handleMRNSubmit}
-                    style={styles.mrnButton}
-                  />
-                  
-                  <Button
-                    title="No MRN Available"
-                    variant="secondary"
-                    onPress={() => setShowMRNForm(false)}
-                    style={styles.mrnButton}
-                  />
-                </View>
+                {loading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading inbounds...</Text>
+                  </View>
+                ) : (
+                  <>
+                    {filteredInbounds.length > 0 ? (
+                      filteredInbounds.map((inbound, index) => (
+                        <TouchableOpacity
+                          key={`inbound-${index}`}
+                          style={styles.inboundCard}
+                          onPress={() => handleSelectInbound(inbound)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.inboundHeader}>
+                            <Text style={styles.poNumber}>{inbound.poNumber}</Text>
+                            <View style={styles.serviceTag}>
+                              <Text style={styles.serviceTagText}>{inbound.inboundService}</Text>
+                            </View>
+                          </View>
+                          
+                          <View style={styles.inboundDetails}>
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Booking:</Text>
+                              <Text style={styles.detailValue}>{inbound.requestedDate} {inbound.timeSlot}</Text>
+                            </View>
+                            
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Company:</Text>
+                              <Text style={styles.detailValue}>{inbound.companyName}</Text>
+                            </View>
+                            
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Transit Type:</Text>
+                              <Text style={styles.detailValue}>{inbound.transitType}</Text>
+                            </View>
+                            
+                            <View style={styles.detailRow}>
+                              <Text style={styles.detailLabel}>Container:</Text>
+                              <Text style={styles.detailValue}>{inbound.containerType}</Text>
+                            </View>
+                            
+                            {inbound.numberPallets && (
+                              <View style={styles.detailRow}>
+                                <Text style={styles.detailLabel}>Pallets:</Text>
+                                <Text style={styles.detailValue}>{inbound.numberPallets}</Text>
+                              </View>
+                            )}
+                            
+                            {inbound.numberCartons && (
+                              <View style={styles.detailRow}>
+                                <Text style={styles.detailLabel}>Cartons:</Text>
+                                <Text style={styles.detailValue}>{inbound.numberCartons}</Text>
+                              </View>
+                            )}
+                          </View>
+                          
+                          <View style={styles.cardFooter}>
+                            <TouchableOpacity 
+                              style={styles.receiveButton}
+                              onPress={() => handleSelectInbound(inbound)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.receiveButtonText}>Receive Inbound</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={styles.emptyStateContainer}>
+                        <Text style={styles.emptyStateIcon}>📦</Text>
+                        <Text style={styles.emptyStateTitle}>
+                          {searchText ? `No results for "${searchText}"` : 'No inbounds available'}
+                        </Text>
+                        <Text style={styles.emptyStateDescription}>
+                          There are no scheduled inbound shipments matching your criteria.
+                        </Text>
+                        
+                        <TouchableOpacity
+                          style={styles.unknownButton}
+                          onPress={() => navigation.navigate('UnknownInbound')}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.unknownButtonText}>Process Unknown Inbound</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
               </View>
             )}
             
-            {!showMRNForm && (
-              <>
-                <View style={styles.photosContainer}>
-                  <Text style={styles.formSectionTitle}>Required Photos</Text>
+            {showDetails && selectedInbound && (
+              <View style={styles.detailsContainer}>
+                <View style={styles.inboundSummaryCard}>
+                  <Text style={styles.companyName}>{selectedInbound.companyName}</Text>
+                  <Text style={styles.poNumberLarge}>{selectedInbound.poNumber}</Text>
                   
-                  {photos.length > 0 && (
-                    <PhotoGrid photos={photos} photoSize="small" columns={3} />
-                  )}
-                  
-                  {!transitPhotoName && (
-                    <PhotoCapture
-                      title="Capture Transit Photo"
-                      cameraType="transit"
-                      category={selectedInbound.transitType}
-                      companyCode={selectedInbound.companyCode}
-                      referenceNumber={selectedInbound.poNumber}
-                      onImageCaptured={handleTransitPhotoCapture}
-                    />
-                  )}
-                  
-                  {!productPhotoName && (
-                    <PhotoCapture
-                      title={`Capture ${selectedInbound.numberPallets ? 'Pallet' : 'Carton'} Photo`}
-                      cameraType="product"
-                      category={`${selectedInbound.numberPallets ? selectedInbound.numberPallets + ' Pallet(s)' : selectedInbound.numberCartons + ' Carton(s)'}`}
-                      companyCode={selectedInbound.companyCode}
-                      referenceNumber={selectedInbound.poNumber}
-                      onImageCaptured={handleProductPhotoCapture}
-                    />
-                  )}
-                  
-                  {selectedInbound.mrnRequired && !mrnDocPhotoName && (
-                    <PhotoCapture
-                      title="Capture MRN Document"
-                      cameraType="mrn"
-                      category="MRN Document"
-                      companyCode={selectedInbound.companyCode}
-                      referenceNumber={selectedInbound.poNumber}
-                      onImageCaptured={handleMRNDocPhotoCapture}
-                    />
-                  )}
+                  <View style={styles.summaryDetailsContainer}>
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Booking:</Text>
+                      <Text style={styles.summaryValue}>
+                        {selectedInbound.requestedDate} {selectedInbound.timeSlot}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.divider} />
+                    
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Customer:</Text>
+                      <Text style={styles.summaryValue}>{selectedInbound.companyCode}</Text>
+                    </View>
+                    
+                    <View style={styles.divider} />
+                    
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Transit Type:</Text>
+                      <Text style={styles.summaryValue}>{selectedInbound.transitType}</Text>
+                    </View>
+                    
+                    <View style={styles.divider} />
+                    
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Container Type:</Text>
+                      <Text style={styles.summaryValue}>{selectedInbound.containerType}</Text>
+                    </View>
+                    
+                    <View style={styles.divider} />
+                    
+                    {numberPalletsDiv && (
+                      <>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Transit Items:</Text>
+                          <Text style={styles.summaryValue}>{numberOfPackages} Pallets</Text>
+                        </View>
+                        <View style={styles.divider} />
+                      </>
+                    )}
+                    
+                    {numberCartonsDiv && (
+                      <>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Transit Items:</Text>
+                          <Text style={styles.summaryValue}>{numberOfPackages} Cartons</Text>
+                        </View>
+                        <View style={styles.divider} />
+                      </>
+                    )}
+                    
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Service:</Text>
+                      <Text style={styles.summaryValue}>{selectedInbound.inboundService}</Text>
+                    </View>
+                  </View>
                 </View>
                 
-                <View style={styles.receiptLaneContainer}>
-                  <Text style={styles.formSectionTitle}>Receipt Lane</Text>
-                  <Input
-                    label="Enter Receipt Lane"
-                    value={receiptLane}
-                    onChangeText={setReceiptLane}
-                    autoCapitalize="characters"
-                  />
-                </View>
+                {/* Confirm Number of Pallets */}
+                {numberPalletsTextDiv && (
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Number Of Transit Items</Text>
+                    <TextInput
+                      style={styles.numberInput}
+                      value={numberOfPackages?.toString() || ''}
+                      onChangeText={(text) => setNumberOfPackages(parseInt(text) || 0)}
+                      keyboardType="number-pad"
+                      placeholder="Enter number of pallets"
+                      placeholderTextColor={COLORS.textLight}
+                    />
+                    <TouchableOpacity
+                      style={styles.confirmButton}
+                      onPress={() => setPallets(numberOfPackages || 0)}
+                    >
+                      <Text style={styles.confirmButtonText}>Confirm</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 
-                <View style={styles.signatureContainer}>
-                  <Text style={styles.formSectionTitle}>Driver's Signature</Text>
-                  <Signature
-                    title="Driver's Signature"
-                    companyCode={selectedInbound.companyCode}
-                    onSignatureCaptured={handleSignatureCapture}
-                  />
-                </View>
+                {/* Confirm Number of Cartons */}
+                {numberCartonsTextDiv && (
+                  <View style={styles.sectionCard}>
+                    <Text style={styles.sectionTitle}>Number Of Transit Items</Text>
+                    <TextInput
+                      style={styles.numberInput}
+                      value={numberOfPackages?.toString() || ''}
+                      onChangeText={(text) => setNumberOfPackages(parseInt(text) || 0)}
+                      keyboardType="number-pad"
+                      placeholder="Enter number of cartons"
+                      placeholderTextColor={COLORS.textLight}
+                    />
+                    <TouchableOpacity
+                      style={styles.confirmButton}
+                      onPress={() => setCartons(numberOfPackages || 0)}
+                    >
+                      <Text style={styles.confirmButtonText}>Confirm</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
                 
-                <Button
-                  title="Complete Inbound"
-                  onPress={handleSubmitInbound}
-                  style={styles.submitButton}
-                  variant="warning"
-                />
-              </>
+                {showMRNForm && (
+                  <View style={styles.mrnFormCard}>
+                    <View style={styles.mrnWarningContainer}>
+                      <Text style={styles.mrnWarningIcon}>⚠️</Text>
+                      <Text style={styles.mrnWarningTitle}>MRN Required</Text>
+                      <Text style={styles.mrnWarningText}>
+                        Inbound {selectedInbound.poNumber} has arrived without an accompanying MRN (Movement Reference Number).
+                        Does the haulier have an MRN?
+                      </Text>
+                      
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.input}
+                          value={mrn}
+                          onChangeText={setMRN}
+                          placeholder="Enter MRN/GMR ID"
+                          placeholderTextColor={COLORS.textLight}
+                        />
+                      </View>
+                      
+                      <View style={styles.mrnButtonsContainer}>
+                        <TouchableOpacity
+                          style={[styles.mrnButton, styles.mrnButtonSecondary]}
+                          onPress={() => setShowMRNForm(false)}
+                        >
+                          <Text style={styles.mrnButtonSecondaryText}>No MRN Available</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={[styles.mrnButton, styles.mrnButtonPrimary]}
+                          onPress={handleMRNSubmit}
+                        >
+                          <Text style={styles.mrnButtonPrimaryText}>Confirm</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                )}
+                
+                {(!showMRNForm && !numberPalletsTextDiv && !numberCartonsTextDiv) && (
+                  <>
+                    {/* Photos Section */}
+                    <View style={styles.sectionCard}>
+                      <Text style={styles.sectionTitle}>Required Photos</Text>
+                      
+                      {photos.length > 0 && (
+                        <PhotoGrid photos={photos} photoSize="small" columns={3} />
+                      )}
+                      
+                      {!transitPhotoName && (
+                        <PhotoCapture
+                          title="Capture Transit Photo"
+                          cameraType="transit"
+                          category={selectedInbound.transitType}
+                          companyCode={selectedInbound.companyCode}
+                          referenceNumber={selectedInbound.poNumber}
+                          onImageCaptured={handleTransitPhotoCapture}
+                        />
+                      )}
+                      
+                      {!productPhotoName && (
+                        <PhotoCapture
+                          title={`Capture ${selectedInbound.numberPallets ? 'Pallet' : 'Carton'} Photo`}
+                          cameraType="product"
+                          category={`${numberOfPackages} ${selectedInbound.numberPallets ? 'Pallet(s)' : 'Carton(s)'}`}
+                          companyCode={selectedInbound.companyCode}
+                          referenceNumber={selectedInbound.poNumber}
+                          onImageCaptured={handleProductPhotoCapture}
+                        />
+                      )}
+                      
+                      {selectedInbound.mrnRequired && mrn && !mrnDocPhotoName && (
+                        <PhotoCapture
+                          title="Capture MRN Document"
+                          cameraType="mrn"
+                          category="MRN Document"
+                          companyCode={selectedInbound.companyCode}
+                          referenceNumber={selectedInbound.poNumber}
+                          onImageCaptured={handleMRNDocPhotoCapture}
+                        />
+                      )}
+                    </View>
+
+                    {/* Receipt Lane Section */}
+                    <View style={styles.sectionCard}>
+                      <Text style={styles.sectionTitle}>Receipt Lane</Text>
+                      
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.input}
+                          value={receiptLane}
+                          onChangeText={setReceiptLane}
+                          placeholder="Enter Receipt Lane"
+                          placeholderTextColor={COLORS.textLight}
+                          autoCapitalize="characters"
+                        />
+                      </View>
+                    </View>
+
+                    {/* Signature Section */}
+                    <View style={styles.sectionCard}>
+                      <Text style={styles.sectionTitle}>Driver's Signature</Text>
+                      
+                      {signatureImage ? (
+                        <View style={styles.signatureComplete}>
+                          <Image 
+                            source={{ uri: signatureImage }} 
+                            style={styles.signatureImage} 
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ) : (
+                        <Signature
+                          title="Driver's Signature"
+                          companyCode={selectedInbound.companyCode}
+                          onSignatureCaptured={handleSignatureCapture}
+                        />
+                      )}
+                    </View>
+                    
+                    {/* Submit Button */}
+                    <TouchableOpacity
+                      style={styles.submitButton}
+                      onPress={handleSubmitInbound}
+                    >
+                      <Text style={styles.submitButtonText}>Complete Inbound</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
             )}
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      
+      {/* Loading Overlay */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingOverlayText}>Processing...</Text>
           </View>
-        )}
-      </ScrollView>
-    </Page>
+        </View>
+      )}
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: COLORS.background,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  backButtonText: {
+    fontSize: 24,
+    color: COLORS.primary,
+    fontWeight: '500',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+  },
+  headerTitleText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  warehouseText: {
+    color: COLORS.primary,
+  },
+  headerPlaceholder: {
+    width: 40,
+  },
+  keyboardAvoidingView: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 30,
+  },
   searchContainer: {
-    padding: spacing.md,
+    padding: 16,
   },
   searchInput: {
-    marginBottom: spacing.md,
+    backgroundColor: COLORS.card,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
-  inboundItem: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.medium
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.textLight,
+  },
+  inboundCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   inboundHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
   poNumber: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
   },
-  service: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.primary,
+  serviceTag: {
+    backgroundColor: 'rgba(0, 169, 181, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  serviceTagText: {
+    fontSize: 14,
+    color: COLORS.primary,
+    fontWeight: '500',
   },
   inboundDetails: {
-    marginBottom: spacing.md,
+    padding: 16,
   },
-  inboundActions: {
+  detailRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    marginBottom: 8,
   },
-  noResults: {
+  detailLabel: {
+    width: 100,
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  detailValue: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+    fontWeight: '600',
+  },
+  cardFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'flex-end',
+  },
+  receiveButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  receiveButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  emptyStateContainer: {
     alignItems: 'center',
-    marginTop: spacing.lg,
+    justifyContent: 'center',
+    padding: 32,
   },
-  noResultsText: {
-    fontSize: typography.fontSizes.medium,
-    marginBottom: spacing.md,
+  emptyStateIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyStateDescription: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginBottom: 24,
+    textAlign: 'center',
   },
   unknownButton: {
-    marginTop: spacing.md,
+    backgroundColor: COLORS.accent,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  unknownButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
   },
   detailsContainer: {
-    padding: spacing.md,
+    padding: 16,
   },
-  inboundSummary: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  inboundSummaryCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   companyName: {
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
+    fontSize: 16,
+    color: COLORS.textLight,
     textAlign: 'center',
+    marginBottom: 4,
   },
   poNumberLarge: {
-    fontSize: typography.fontSizes.xlarge,
-    fontWeight: typography.fontWeights.bold as any,
-    color: colors.text,
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.text,
     textAlign: 'center',
-    marginBottom: spacing.md,
+    marginBottom: 16,
   },
-  infoRow: {
+  summaryDetailsContainer: {
+    borderRadius: 12,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  summaryRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: spacing.xs,
+    padding: 12,
   },
-  infoLabel: {
+  summaryLabel: {
+    width: 120,
+    fontSize: 15,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  summaryValue: {
     flex: 1,
-    fontSize: typography.fontSizes.medium,
-    color: colors.text,
+    fontSize: 15,
+    color: COLORS.text,
+    fontWeight: '600',
   },
-  infoValue: {
-    flex: 2,
-    fontSize: typography.fontSizes.medium,
-    fontWeight: typography.fontWeights.medium as any,
-    color: colors.text,
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
   },
-  mrnForm: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  sectionCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  formSectionTitle: {
-    fontSize: typography.fontSizes.large,
-    fontWeight: typography.fontWeights.medium as any,
-    color: colors.text,
-    marginBottom: spacing.md,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 16,
   },
-  mrnMessage: {
-    fontSize: typography.fontSizes.medium,
-    marginBottom: spacing.md,
+  mrnFormCard: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
-  mrnButtons: {
+  mrnWarningContainer: {
+    alignItems: 'center',
+  },
+  mrnWarningIcon: {
+    fontSize: 36,
+    marginBottom: 12,
+  },
+  mrnWarningTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  mrnWarningText: {
+    fontSize: 15,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 16,
+  },
+  input: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  numberInput: {
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  confirmButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  confirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  mrnButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
   },
   mrnButton: {
     flex: 1,
-    marginHorizontal: spacing.xs,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    marginHorizontal: 6,
   },
-  photosContainer: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  mrnButtonPrimary: {
+    backgroundColor: COLORS.primary,
   },
-  receiptLaneContainer: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  mrnButtonPrimaryText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
   },
-  signatureContainer: {
-    backgroundColor: colors.background,
-    borderRadius: 4,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  mrnButtonSecondary: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  mrnButtonSecondaryText: {
+    color: COLORS.text,
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  signatureComplete: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 169, 181, 0.05)',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  signatureImage: {
+    width: '100%',
+    height: 150,
+    borderRadius: 8,
   },
   submitButton: {
-    marginVertical: spacing.lg,
+    backgroundColor: COLORS.accent,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 24,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  submitButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingBox: {
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  loadingOverlayText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: 16,
   },
 });
 
