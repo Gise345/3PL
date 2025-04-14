@@ -20,6 +20,7 @@ import { Page, Button, Input, PhotoCapture, PhotoGrid } from '../../components/c
 import { InboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api';
+import { MaterialIcons } from '@expo/vector-icons';
 
 // Define modern color palette with teal primary color to match other screens
 const COLORS = {
@@ -95,6 +96,7 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const [printerValue, setPrinterValue] = useState('printer1');
   const [receiptLaneError, setReceiptLaneError] = useState('');
   const [receiptLaneVerified, setReceiptLaneVerified] = useState(false);
+
 
   const validateReceiptLane = async () => {
     if (!receiptLane.trim()) {
@@ -275,7 +277,30 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
     setPhotos(prev => [...prev, { uri, label: 'MRN Document', name }]);
     moveToBottom();
   };
+
+  // Add this function to handle photo deletion
+const handleDeletePhoto = (photoName: string) => {
+  // Find the photo to delete
+  const photoToDelete = photos.find(photo => photo.name === photoName);
   
+  if (!photoToDelete) return;
+  
+  // Update the appropriate photo name state
+  if (photoToDelete.label === 'Transit') {
+    setTransitPhotoName('');
+  } else if (photoToDelete.label === 'Product') {
+    setProductPhotoName('');
+  } else if (photoToDelete.label === 'MRN Document') {
+    setMrnDocPhotoName('');
+  }
+  
+  // Remove the photo from the photos array
+  setPhotos(photos.filter(photo => photo.name !== photoName));
+  
+  // Show feedback to the user
+  Alert.alert('Photo Deleted', 'You can now retake this photo.');
+};
+
   
   const handleSubmitInbound = async () => {
     // Validate receipt lane if not already verified
@@ -286,6 +311,11 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
 
      // Validate all required fields
     if (!validateRequiredFields()) return;
+
+    // Format date and time for landedDate
+    const now = new Date();
+    const day = now.toISOString().split('T')[0].split('-').join(''); // "20250411" 
+    const time = ('0' + now.getHours()).slice(-2) + ('0' + now.getMinutes()).slice(-2); // e.g., "1457"
     
     if (photos.length < 2) {
       Alert.alert('Error', 'Please capture all required photos');
@@ -320,12 +350,12 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
         receiptLane: receiptLane.toUpperCase(),
         inbound: selectedInbound,
         printerName: printerValue, // Use the printer value for API
-        landedDate: new Date().toISOString().split('T')[0].split('-').join(''),
+        landedDate:  day + ' ' + time,
         transitType: selectedInbound.transitType,
         numberOfPackages: numberOfPackages,
         mrn: mrn,
         haulierMrnDocPhoto: mrnDocPhotoName,
-        // landedBy: user.email, // This would come from auth state in a real implementation
+        landedBy: "test@example.co.uk", // Mock email for testing purposes - switch back to landedBy: this.user.email
       };
       
       // Add MRN if required
@@ -336,6 +366,19 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
       
       // Submit the inbound
       const response = await inboundService.submitInbound(data);
+  
+  if (response.data?.message) {
+    Alert.alert('Success', response.data.message);
+  } else {
+    Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
+  }
+  
+  // Set GRN arrived status
+  await inboundService.setGRNArrivedAt({
+    inboundId: selectedInbound.inboundId,
+    poNumber: selectedInbound.poNumber,
+    arrivedAt: new Date().toISOString()
+  });
       
       Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
       resetForm();
@@ -678,47 +721,52 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
                 
                 {(!showMRNForm && !numberPalletsTextDiv && !numberCartonsTextDiv) && (
                   <>
-                    {/* Photos Section */}
-                    <View style={styles.sectionCard}>
-                      <Text style={styles.sectionTitle}>Required Photos</Text>
-                      
-                      {photos.length > 0 && (
-                        <PhotoGrid photos={photos} photoSize="small" columns={3} />
-                      )}
-                      
-                      {!transitPhotoName && (
-                        <PhotoCapture
-                          title="Capture Transit Photo"
-                          cameraType="transit"
-                          category={selectedInbound.transitType}
-                          companyCode={selectedInbound.companyCode}
-                          referenceNumber={selectedInbound.poNumber}
-                          onImageCaptured={handleTransitPhotoCapture}
-                        />
-                      )}
-                      
-                      {!productPhotoName && (
-                        <PhotoCapture
-                          title={`Capture ${selectedInbound.numberPallets ? 'Pallet' : 'Carton'} Photo`}
-                          cameraType="product"
-                          category={`${numberOfPackages} ${selectedInbound.numberPallets ? 'Pallet(s)' : 'Carton(s)'}`}
-                          companyCode={selectedInbound.companyCode}
-                          referenceNumber={selectedInbound.poNumber}
-                          onImageCaptured={handleProductPhotoCapture}
-                        />
-                      )}
-                      
-                      {selectedInbound.mrnRequired && mrn && !mrnDocPhotoName && (
-                        <PhotoCapture
-                          title="Capture MRN Document"
-                          cameraType="mrn"
-                          category="MRN Document"
-                          companyCode={selectedInbound.companyCode}
-                          referenceNumber={selectedInbound.poNumber}
-                          onImageCaptured={handleMRNDocPhotoCapture}
-                        />
-                      )}
-                    </View>
+                 {/* Photos Section */}
+<View style={styles.sectionCard}>
+  <Text style={styles.sectionTitle}>Required Photos</Text>
+  
+  {photos.length > 0 && (
+    <PhotoGrid 
+      photos={photos} 
+      onDeletePhoto={handleDeletePhoto}
+    />
+  )}
+  
+  {!transitPhotoName && (
+    <PhotoCapture
+      title="Transit Photo"
+      cameraType="transit"
+      category="Transit"
+      companyCode={selectedInbound?.companyCode}
+      referenceNumber={selectedInbound?.poNumber}
+      onImageCaptured={handleTransitPhotoCapture}
+    />
+  )}
+  
+  {!productPhotoName && (
+    <PhotoCapture
+      title="Product Photo"
+      cameraType="product"
+      category="Product"
+      companyCode={selectedInbound?.companyCode}
+      referenceNumber={selectedInbound?.poNumber}
+      onImageCaptured={handleProductPhotoCapture}
+    />
+  )}
+  
+  {selectedInbound?.mrnRequired && mrn && !mrnDocPhotoName && (
+    <PhotoCapture
+      title="MRN Document Photo"
+      cameraType="mrn"
+      category="MRN Document"
+      companyCode={selectedInbound?.companyCode}
+      referenceNumber={selectedInbound?.poNumber}
+      onImageCaptured={handleMRNDocPhotoCapture}
+    />
+  )}
+</View>
+
+
 
                    
                     {/* Receipt Lane Section with Validation */}
@@ -1317,6 +1365,34 @@ const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
               marginTop: 4,
               marginBottom: 8,
             },
+
+            photoRequirementContainer: {
+              marginTop: 16,
+            },
+            photoRequirementItem: {
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+            },
+            photoMissing: {
+              backgroundColor: 'rgba(0, 169, 181, 0.05)',
+              borderWidth: 1,
+              borderColor: COLORS.border,
+            },
+            photoComplete: {
+              backgroundColor: 'rgba(76, 217, 100, 0.05)',
+              borderWidth: 1,
+              borderColor: 'rgba(76, 217, 100, 0.2)',
+            },
+            photoRequirementText: {
+              fontSize: 16,
+              fontWeight: '500',
+              color: COLORS.text,
+              marginLeft: 12,
+            },
+            
 
 });
 

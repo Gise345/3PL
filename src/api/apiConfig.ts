@@ -5,8 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Base URLs based on environment
 const PRODUCTION_API_URL = 'https://reports.3p-logistics.co.uk/api/v1';
 const DEVELOPMENT_API_URL = Platform.OS === 'android'
-  ? 'http://10.0.2.2:3000/api/v1' // Android emulator
-  : 'http://localhost:3000/api/v1'; // iOS simulator
+  ? 'https://reports.3p-logistics.co.uk/api/test/v1/' // Android emulator http://10.0.2.2:3000/api/v1
+  : 'https://reports.3p-logistics.co.uk/api/test/v1/'; // iOS simulator http://localhost:3000/api/v1
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';

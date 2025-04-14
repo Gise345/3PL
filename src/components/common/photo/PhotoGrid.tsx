@@ -8,18 +8,21 @@ import { StatusBar } from 'expo-status-bar';
 interface Photo {
   uri: string;
   label?: string;
+  name: string;
 }
 
 interface PhotoGridProps {
   photos: Photo[];
   columns?: number;
   photoSize?: 'small' | 'medium' | 'large';
+  onDeletePhoto?: (photoName: string) => void;
 }
 
 const PhotoGrid: React.FC<PhotoGridProps> = ({
   photos,
   columns = 3,
   photoSize = 'medium',
+  onDeletePhoto,
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
 
@@ -42,6 +45,14 @@ const PhotoGrid: React.FC<PhotoGridProps> = ({
               size={photoSize}
               onPress={() => handlePhotoPress(photo)}
             />
+            {onDeletePhoto && (
+              <TouchableOpacity 
+                style={styles.deleteButton}
+                onPress={() => onDeletePhoto(photo.name)}
+              >
+                <MaterialIcons name="delete" size={24} color="#ff3b30" />
+              </TouchableOpacity>
+            )}
           </View>
         ))}
       </View>
@@ -110,6 +121,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.md,
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 15,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
 });
 
