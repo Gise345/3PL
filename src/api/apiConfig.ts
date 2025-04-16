@@ -19,6 +19,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
     // Default Authorization header from the original Vue app
     'Authorization': 'Basic d2FyZWhvdXNlQWRtaW46M1BMJldIRChBUEkp',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
   },
 });
 

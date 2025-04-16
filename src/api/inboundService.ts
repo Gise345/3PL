@@ -21,7 +21,9 @@ export const inboundService = {
   
   submitInbound: async (inboundData: any) => {
     try {
-      const response = await api.post('/warehouse/systems/door/inbounds', inboundData);
+      const response = await api.post('/warehouse/systems/door/inbounds', inboundData, {
+        timeout: 60000 // 60 seconds timeout specifically for this request
+      });
       return response.data;
     } catch (error) {
       throw error;

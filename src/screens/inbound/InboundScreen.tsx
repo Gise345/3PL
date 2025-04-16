@@ -52,6 +52,7 @@ interface InboundPhoto {
 
 const InboundScreen: React.FC<InboundScreenProps> = ({ navigation }) => {
   const { warehouse } = useAppSelector((state) => state.settings);
+  const { user } = useAppSelector((state) => state.auth);
   
   // State for inbounds
   const [loading, setLoading] = useState(false);
@@ -302,93 +303,97 @@ const handleDeletePhoto = (photoName: string) => {
 };
 
   
-  const handleSubmitInbound = async () => {
-    // Validate receipt lane if not already verified
-    if (!receiptLaneVerified) {
-      const isValid = await validateReceiptLane();
-      if (!isValid) return;
-    }
+const handleSubmitInbound = async () => {
+  // Validate receipt lane if not already verified
+  if (!receiptLaneVerified) {
+    const isValid = await validateReceiptLane();
+    if (!isValid) return;
+  }
 
-     // Validate all required fields
-    if (!validateRequiredFields()) return;
-
-    // Format date and time for landedDate
-    const now = new Date();
-    const day = now.toISOString().split('T')[0].split('-').join(''); // "20250411" 
-    const time = ('0' + now.getHours()).slice(-2) + ('0' + now.getMinutes()).slice(-2); // e.g., "1457"
-    
-    if (photos.length < 2) {
-      Alert.alert('Error', 'Please capture all required photos');
-      return;
-    }
-    
-    if (!receiptLane) {
-      setReceiptLaneError('Please enter a receipt lane');
-      return;
-    }
-    
-    if (photos.length < 2) {
-      Alert.alert('Error', 'Please capture all required photos');
-      return;
-    }
-    
-    if (!printerValue) {
-      Alert.alert('Error', 'Printer selection is required');
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      // Prepare data with all required fields
-      const data = {
-        warehouse: selectedInbound.warehouse,
-        poNumber: selectedInbound.poNumber,
-        companyCode: selectedInbound.companyCode,
-        inboundItemsPhoto: productPhotoName,
-        transitTypePhoto: transitPhotoName,
-        timeReceived: new Date().toISOString(),
-        receiptLane: receiptLane.toUpperCase(),
-        inbound: selectedInbound,
-        printerName: printerValue, // Use the printer value for API
-        landedDate:  day + ' ' + time,
-        transitType: selectedInbound.transitType,
-        numberOfPackages: numberOfPackages,
-        mrn: mrn,
-        haulierMrnDocPhoto: mrnDocPhotoName,
-        landedBy: "test@example.co.uk", // Mock email for testing purposes - switch back to landedBy: this.user.email
-      };
-      
-      // Add MRN if required
-      if (selectedInbound.mrnRequired && mrn) {
-        data.mrn = mrn;
-        data.haulierMrnDocPhoto = mrnDocPhotoName;
-      }
-      
-      // Submit the inbound
-      const response = await inboundService.submitInbound(data);
+  // Validate all required fields
+  if (!validateRequiredFields()) return;
   
-  if (response.data?.message) {
-    Alert.alert('Success', response.data.message);
-  } else {
-    Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
+  // Check if we have a valid selectedInbound
+  if (!selectedInbound) {
+    Alert.alert('Error', 'No inbound shipment selected');
+    return;
+  }
+
+  // Format date and time for landedDate
+  const now = new Date();
+  const day = now.toISOString().split('T')[0].split('-').join(''); // "20250411" 
+  const time = ('0' + now.getHours()).slice(-2) + ('0' + now.getMinutes()).slice(-2); // e.g., "1457"
+  
+  if (photos.length < 2) {
+    Alert.alert('Error', 'Please capture all required photos');
+    return;
   }
   
-  // Set GRN arrived status
-  await inboundService.setGRNArrivedAt({
-    inboundId: selectedInbound.inboundId,
-    poNumber: selectedInbound.poNumber,
-    arrivedAt: new Date().toISOString()
-  });
-      
-      Alert.alert('Success', 'Inbound for ' + selectedInbound.companyCode + ' Completed');
-      resetForm();
-    } catch (error) {
-      console.error('Error submitting inbound:', error);
-      Alert.alert('Error', 'Failed to process inbound');
-    } finally {
-      setLoading(false);
+  if (!receiptLane) {
+    setReceiptLaneError('Please enter a receipt lane');
+    return;
+  }
+  
+  if (!printerValue) {
+    Alert.alert('Error', 'Printer selection is required');
+    return;
+  }
+  
+  setLoading(true);
+  try {
+    // Prepare data with all required fields
+    const data = {
+      warehouse: selectedInbound.warehouse,
+      poNumber: selectedInbound.poNumber,
+      companyCode: selectedInbound.companyCode,
+      inboundItemsPhoto: productPhotoName,
+      transitTypePhoto: transitPhotoName,
+      timeReceived: new Date().toISOString(),
+      receiptLane: receiptLane.toUpperCase(),
+      inbound: selectedInbound,
+      printerName: printerValue, // Use the printer value for API
+      landedDate: day + ' ' + time,
+      transitType: selectedInbound.transitType,
+      numberOfPackages: numberOfPackages,
+      mrn: mrn,
+      haulierMrnDocPhoto: mrnDocPhotoName,
+      landedBy: "test@example.co.uk", // change back to this and test -  user?.email
+    };
+    
+    // Add MRN if required and available
+    if (selectedInbound.mrnRequired && mrn) {
+      data.mrn = mrn;
+      if (mrnDocPhotoName) {
+        data.haulierMrnDocPhoto = mrnDocPhotoName;
+      }
     }
-  };
+    
+    // Submit the inbound
+    const response = await inboundService.submitInbound(data);
+    
+    // Update GRN arrived status
+    if (selectedInbound.inboundId && selectedInbound.poNumber) {
+      await inboundService.setGRNArrivedAt({
+        inboundId: selectedInbound.inboundId,
+        poNumber: selectedInbound.poNumber,
+        arrivedAt: new Date().toISOString()
+      });
+    }
+    
+    console.log('About to show success alert');
+    // Show success message with fun, cheeky text
+    Alert.alert(
+      '🎉 Success!',
+      `Inbound for ${selectedInbound.companyCode || 'Unknown'} processed successfully!\n\nYou're on a roll today! Back to the home page we go...`,
+      [{ text: 'Take me home!', onPress: () => navigation.navigate('Home') }]
+    );
+  } catch (error) {
+    console.error('Error submitting inbound:', error);
+    Alert.alert('Error', 'Failed to process inbound. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
   
 
   const resetForm = () => {
@@ -817,7 +822,7 @@ const handleDeletePhoto = (photoName: string) => {
                     >
                       <Text style={styles.submitButtonText}>Complete Inbound</Text>
                     </TouchableOpacity>
-                  </>
+                 </>
                     )}
                   </View>
                 )}

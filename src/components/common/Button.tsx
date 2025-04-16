@@ -5,7 +5,8 @@ import {
   StyleSheet, 
   ActivityIndicator, 
   ViewStyle, 
-  TextStyle 
+  TextStyle,
+  View
 } from 'react-native';
 import { colors, typography, spacing } from '../../utils/theme';
 
@@ -18,6 +19,8 @@ interface ButtonProps {
   style?: ViewStyle;
   textStyle?: TextStyle;
   small?: boolean;
+  icon?: React.ReactNode;
+  iconPosition?: 'left' | 'right';
 }
 
 const Button: React.FC<ButtonProps> = ({
@@ -29,6 +32,8 @@ const Button: React.FC<ButtonProps> = ({
   style,
   textStyle,
   small = false,
+  icon,
+  iconPosition = 'left',
 }) => {
   // Determine the style based on variant
   const getButtonStyle = () => {
@@ -72,9 +77,13 @@ const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator size="small" color={variant === 'outline' ? colors.primary : colors.background} />
       ) : (
-        <Text style={[getTextStyle(), small && styles.smallButtonText, textStyle]}>
-          {title}
-        </Text>
+        <View style={[styles.contentContainer, iconPosition === 'right' && styles.reverseContent]}>
+          {icon && iconPosition === 'left' && <View style={styles.iconContainer}>{icon}</View>}
+          <Text style={[getTextStyle(), small && styles.smallButtonText, textStyle]}>
+            {title}
+          </Text>
+          {icon && iconPosition === 'right' && <View style={styles.iconContainer}>{icon}</View>}
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -123,6 +132,17 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.fontSizes.regular,
     fontWeight: typography.fontWeights.medium as any,
+  },
+  contentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reverseContent: {
+    flexDirection: 'row-reverse',
+  },
+  iconContainer: {
+    marginHorizontal: spacing.xs,
   },
 });
 

@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Import reducers
 import authReducer from './slices/authSlice';
 import settingsReducer from './slices/settingsSlice';
+import carrierOutboundReducer from './slices/carrierOutboundSlice';
 
 // Configuration for redux-persist
 const persistConfig = {
@@ -17,6 +18,7 @@ const persistConfig = {
 const rootReducer = combineReducers({
   auth: authReducer,
   settings: settingsReducer,
+  carrierOutbound: carrierOutboundReducer,
   // Add other reducers here as we build them
 });
 
