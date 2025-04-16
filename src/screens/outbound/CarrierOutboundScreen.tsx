@@ -14,7 +14,8 @@ import {
   SafeAreaView,
   Animated,
   Platform,
-  Dimensions
+  Dimensions,
+  Modal
 } from 'react-native';
 import { PhotoCapture } from '../../components/common/photo';
 import SignaturePad from '../../components/common/signature/SignaturePad';
@@ -97,6 +98,8 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
   const [searchText, setSearchText] = useState('');
   const [filteredCarriers, setFilteredCarriers] = useState<Carrier[]>([]);
 
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
+
   // Component state for UI flow
   const [step, setStep] = useState<
     'select-carrier' | 
@@ -123,8 +126,12 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
     companyCode: 'OUT',
     referenceNumber: selectedCarrier?.name,
     onImageCaptured: (imageUri, imageName) => {
+      // Save the captured photo data regardless of which step we're on
+      dispatch(setParcelPhoto({ uri: imageUri, name: imageName }));
+      
+      // Only advance to the next step if we're on the capture-photo step
+      // If we're on summary, we stay there
       if (step === 'capture-photo') {
-        dispatch(setParcelPhoto({ uri: imageUri, name: imageName }));
         setStep('driver-reg');
       }
     }
@@ -238,12 +245,17 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
   };
 
   // Handle number of parcels input
-  const handleNumberOfParcelsInput = (value: string) => {
+ const handleNumberOfParcelsInput = (value: string) => {
+  if (value === '') {
+    // Allow empty string (when deleting)
+    dispatch(setNumberOfParcels(0));
+  } else {
     const parsedValue = parseInt(value, 10);
     if (!isNaN(parsedValue) && parsedValue >= 0) {
       dispatch(setNumberOfParcels(parsedValue));
     }
-  };
+  }
+};
 
   // Handle photo capture
   const handleTakeParcelPhoto = () => {
@@ -253,14 +265,8 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
   // Handle signature capture
   const handleSignatureCaptured = (signatureUri: string, signatureName: string) => {
     dispatch(setSignatureImage({ uri: signatureUri, name: signatureName }));
-    // Show a success message before proceeding to the next step
-    Alert.alert(
-      "Signature Captured", 
-      "Signature has been successfully captured. You can proceed to the summary screen.",
-      [
-        { text: "View Summary", onPress: () => setStep('summary') }
-      ]
-    );
+     // Immediately proceed to the summary screen without showing an alert
+    setStep('summary');
   };
 
   // Handle outbound submission
@@ -310,11 +316,10 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
       {loading ? (
         <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
       ) : filteredCarriers.length > 0 ? (
-        <FlatList
-          data={filteredCarriers}
-          keyExtractor={(item) => item.name}
-          renderItem={({ item }) => (
+        <View style={styles.carrierListContainer}>
+          {filteredCarriers.map((item) => (
             <TouchableOpacity 
+              key={item.name}
               style={styles.carrierItem}
               onPress={() => handleSelectCarrier(item)}
             >
@@ -324,9 +329,8 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
               </View>
               <MaterialIcons name="chevron-right" size={24} color={COLORS.primary} />
             </TouchableOpacity>
-          )}
-          style={styles.carrierList}
-        />
+          ))}
+        </View>
       ) : (
         <View style={styles.emptyStateContainer}>
           <Text style={styles.emptyStateIcon}>🚚</Text>
@@ -481,82 +485,131 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
   );
 
   // Render summary and submission
-  const renderSummary = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Outbound Summary</Text>
-      
-      {selectedCarrier && (
-        <>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Carrier:</Text>
-            <Text style={styles.summaryValue}>{selectedCarrier.name}</Text>
+  // In the renderSummary function, update the photo preview section:
+const renderSummary = () => (
+  <View style={styles.section}>
+    <Text style={styles.sectionTitle}>Outbound Summary</Text>
+    
+    {selectedCarrier && (
+      <>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Carrier:</Text>
+          <Text style={styles.summaryValue}>{selectedCarrier.name}</Text>
+        </View>
+        
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Number of Parcels:</Text>
+          <Text style={styles.summaryValue}>{numberOfParcels}</Text>
+        </View>
+        
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Registration:</Text>
+          <Text style={styles.summaryValue}>{driverReg.toUpperCase()}</Text>
+        </View>
+        
+        <View style={styles.photoPreviewContainer}>
+          <View style={styles.photoPreviewItem}>
+            <Text style={styles.photoLabel}>Parcel Photo</Text>
+            {parcelPhoto ? (
+              <TouchableOpacity 
+                style={styles.photoWrapper}
+                onPress={handleTakeParcelPhoto} // Changed to directly open camera
+                activeOpacity={0.8}
+              >
+                <Image source={{ uri: parcelPhoto }} style={styles.photoPreview} />
+                <View style={styles.editOverlay}>
+                  <Text style={styles.editOverlayText}>Edit</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.photoWrapper, styles.photoPlaceholder]}
+                onPress={handleTakeParcelPhoto}
+              >
+                <MaterialIcons name="add-a-photo" size={40} color={COLORS.border} />
+              </TouchableOpacity>
+            )}
           </View>
           
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Number of Parcels:</Text>
-            <Text style={styles.summaryValue}>{numberOfParcels}</Text>
+          <View style={styles.photoPreviewItem}>
+            <Text style={styles.photoLabel}>Signature</Text>
+            {signatureImage ? (
+              <TouchableOpacity 
+                style={styles.photoWrapper}
+                onPress={() => {
+                  // Open signature pad directly in summary view
+                  setShowSignaturePad(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Image source={{ uri: signatureImage }} style={styles.photoPreview} />
+                <View style={styles.editOverlay}>
+                  <Text style={styles.editOverlayText}>Edit</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.photoWrapper, styles.photoPlaceholder]}
+                onPress={() => setShowSignaturePad(true)}
+              >
+                <MaterialIcons name="draw" size={40} color={COLORS.border} />
+              </TouchableOpacity>
+            )}
           </View>
-          
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Registration:</Text>
-            <Text style={styles.summaryValue}>{driverReg.toUpperCase()}</Text>
-          </View>
-          
-          <View style={styles.photoPreviewContainer}>
-            <View style={styles.photoPreviewItem}>
-              <Text style={styles.photoLabel}>Parcel Photo</Text>
-              {parcelPhoto && (
-                <TouchableOpacity 
-                  style={styles.photoWrapper}
-                  onPress={() => setStep('capture-photo')} // Allow going back to retake photo
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: parcelPhoto }} style={styles.photoPreview} />
-                  <View style={styles.editOverlay}>
-                    <Text style={styles.editOverlayText}>Edit</Text>
+        </View>
+        
+        {/* Signature Pad Modal */}
+          {showSignaturePad && (
+            <Modal
+              visible={showSignaturePad}
+              transparent={true}
+              animationType="slide"
+            >
+              <View style={styles.signatureModalContainer}>
+                <View style={styles.signatureModalContent}>
+                  <View style={styles.signatureModalHeader}>
+                    <Text style={styles.signatureModalTitle}>Driver Signature</Text>
+                    <TouchableOpacity 
+                      style={styles.signatureCloseButton}
+                      onPress={() => setShowSignaturePad(false)}
+                    >
+                      <MaterialIcons name="close" size={24} color={COLORS.text} />
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              )}
-            </View>
-            
-            <View style={styles.photoPreviewItem}>
-              <Text style={styles.photoLabel}>Signature</Text>
-              {signatureImage && (
-                <TouchableOpacity 
-                  style={styles.photoWrapper}
-                  onPress={() => setStep('capture-signature')} // Allow going back to redo signature
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: signatureImage }} style={styles.photoPreview} />
-                  <View style={styles.editOverlay}>
-                    <Text style={styles.editOverlayText}>Edit</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          
-          <Button
-            title="Submit Outbound"
-            onPress={handleSubmitOutbound}
-            style={styles.submitButton}
-            loading={loading}
-            disabled={loading}
-            variant="warning"
-          />
-          
-          <TouchableOpacity
-            style={styles.backToPreviousStep}
-            onPress={() => setStep('capture-signature')}
-          >
-            <Text style={styles.backToPreviousStepText}>
-              ← Back to signature
-            </Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
-  );
+                  <SignaturePad
+                    onSignatureCapture={(uri, name) => {
+                      handleSignatureCaptured(uri, name);
+                      setShowSignaturePad(false);
+                    }}
+                    companyCode="OUT"
+                    carrierName={selectedCarrier.name}
+                  />
+                </View>
+              </View>
+            </Modal>
+          )}
+        
+        <Button
+          title="Submit Outbound"
+          onPress={handleSubmitOutbound}
+          style={styles.submitButton}
+          loading={loading}
+          disabled={loading || !parcelPhoto || !signatureImage}
+          variant="primary"
+        />
+        
+        <TouchableOpacity
+          style={styles.backToPreviousStep}
+          onPress={() => setStep('driver-reg')}
+        >
+          <Text style={styles.backToPreviousStepText}>
+            ← Back to driver details
+          </Text>
+        </TouchableOpacity>
+      </>
+    )}
+  </View>
+);
 
   // Render current step
   const renderCurrentStep = () => {
@@ -578,47 +631,80 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
     }
   };
   
-  // Render step indicators
-  const renderStepIndicators = () => {
-    const steps = [
-      { key: 'select-carrier', label: 'Select Carrier' },
-      { key: 'confirm-parcels', label: 'Confirm Parcels' },
-      { key: 'capture-photo', label: 'Capture Photo' },
-      { key: 'driver-reg', label: 'Driver Details' },
-      { key: 'capture-signature', label: 'Signature' },
-      { key: 'summary', label: 'Summary' },
-    ];
-    
-    const currentStepIndex = steps.findIndex(s => s.key === step);
-    
-    // Function to handle step navigation
-    const navigateToStep = (targetStep: string, targetIndex: number) => {
-      // Only allow navigating to steps that are completed or the current step
-      if (targetIndex <= currentStepIndex) {
-        setStep(targetStep as any);
-      } else {
-        // Optional: Show a message that they need to complete the current step first
-        Alert.alert(
-          "Complete Current Step", 
-          "Please complete the current step before proceeding.",
-          [{ text: "OK" }]
-        );
+  
+  // Updated the function to improve step navigation:
+    // Update the renderStepIndicators function to implement the new step navigation logic
+const renderStepIndicators = () => {
+  const steps = [
+    { key: 'select-carrier', label: 'Select Carrier' },
+    { key: 'confirm-parcels', label: 'Confirm Parcels' },
+    { key: 'capture-photo', label: 'Capture Photo' },
+    { key: 'driver-reg', label: 'Driver Details' },
+    { key: 'capture-signature', label: 'Signature' },
+    { key: 'summary', label: 'Summary' },
+  ];
+  
+  const currentStepIndex = steps.findIndex(s => s.key === step);
+  
+  // Track completed steps - consider any step before the current highest step as completed
+  const highestCompletedIndex = Math.max(
+    steps.findIndex(s => s.key === 'summary' && signatureImage), // Summary requires signature
+    steps.findIndex(s => s.key === 'capture-signature' && driverReg.length >= 4), // Signature requires driver reg
+    steps.findIndex(s => s.key === 'driver-reg' && parcelPhoto), // Driver reg requires photo
+    steps.findIndex(s => s.key === 'capture-photo' && numberOfParcels > 0), // Photo requires parcels
+    steps.findIndex(s => s.key === 'confirm-parcels' && selectedCarrier), // Confirm requires carrier
+    0 // Always consider first step as accessible
+  );
+  
+  // Function to handle step navigation
+  const navigateToStep = (targetStep: string, targetIndex: number) => {
+    // Special cases for Summary step (step 6)
+    if (step === 'summary') {
+      if (targetStep === 'capture-photo') {
+        // Open camera directly instead of going back to photo step
+        handleTakeParcelPhoto();
+        return;
       }
-    };
+      
+      if (targetStep === 'capture-signature') {
+        // Open signature pad directly instead of going to signature step
+        setShowSignaturePad(true);
+        return;
+      }
+    }
     
-    return (
-      <View style={styles.stepIndicatorContainer}>
-        {steps.map((s, index) => (
+    // Only allow navigation to steps that are accessible
+    if (targetIndex <= highestCompletedIndex) {
+      setStep(targetStep as any);
+    } else {
+      // Show a message that they need to complete prior steps first
+      Alert.alert(
+        "Complete Prior Steps", 
+        "Please complete all prior steps before proceeding.",
+        [{ text: "OK" }]
+      );
+    }
+  };
+  
+  return (
+    <View style={styles.stepIndicatorContainer}>
+      {steps.map((s, index) => {
+        // Determine if this step should be highlighted as completed
+        const isCompleted = index <= highestCompletedIndex;
+        const isCurrent = s.key === step;
+        
+        return (
           <TouchableOpacity
             key={s.key}
             onPress={() => navigateToStep(s.key, index)}
             style={styles.stepIndicatorWrapper}
-            activeOpacity={index <= currentStepIndex ? 0.7 : 1}
+            activeOpacity={isCompleted ? 0.7 : 1}
           >
             <View 
               style={[
                 styles.stepIndicator,
-                index <= currentStepIndex ? styles.activeStep : styles.inactiveStep,
+                isCompleted ? styles.completedStep : styles.inactiveStep,
+                isCurrent ? styles.currentStep : null,
                 index === 0 ? styles.firstStep : null,
                 index === steps.length - 1 ? styles.lastStep : null,
               ]}
@@ -626,28 +712,29 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
               <Text 
                 style={[
                   styles.stepNumber,
-                  index <= currentStepIndex ? styles.activeStepText : styles.inactiveStepText
+                  isCompleted ? styles.completedStepText : styles.inactiveStepText,
                 ]}
               >
                 {index + 1}
               </Text>
             </View>
             
-            {/* Optional: Add step labels below the indicators */}
             <Text 
               style={[
                 styles.stepLabel, 
-                index <= currentStepIndex ? styles.activeStepLabel : styles.inactiveStepLabel
+                isCompleted ? styles.completedStepLabel : styles.inactiveStepLabel,
+                isCurrent ? styles.currentStepLabel : null,
               ]}
               numberOfLines={1}
             >
               {s.label}
             </Text>
           </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
+        );
+      })}
+    </View>
+  );
+};
   
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -680,6 +767,7 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
         style={styles.scrollView}
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={step !== 'capture-signature'} // Disable scrolling when signature pad is active
       >
         <Animated.View 
           style={{ 
@@ -717,6 +805,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     backgroundColor: COLORS.background,
+    borderBottomWidth: 1,  // Add this to create the visual separation line
+    borderBottomColor: COLORS.border, // Add this to match the border color
+    marginTop: Platform.OS === 'ios' ? 0 : StatusBar.currentHeight, // Add this to prevent cutting off on Android
     ...Platform.select({
       ios: {
         shadowColor: COLORS.shadow,
@@ -949,6 +1040,7 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginTop: 16,
+    backgroundColor: COLORS.primary,
   },
   summaryItem: {
     flexDirection: 'row',
@@ -1044,8 +1136,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginTop: 16,
   },
-  // Add these missing style properties at the end of your styles object:
-
+  
   backToPreviousStep: {
     marginTop: 16,
     alignItems: 'center',
@@ -1086,6 +1177,64 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: '600',
+  },
+  photoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+  },
+  signatureModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+  },
+  signatureModalContent: {
+    backgroundColor: COLORS.background,
+    marginHorizontal: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 5,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  signatureModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  signatureModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  signatureCloseButton: {
+    padding: 4,
+  },
+  completedStep: {
+    backgroundColor: COLORS.primary,
+  },
+  currentStep: {
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+  },
+  completedStepText: {
+    color: COLORS.card,
+  },
+  completedStepLabel: {
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  currentStepLabel: {
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  carrierListContainer: {
+    maxHeight: 400,
   },
 });
 

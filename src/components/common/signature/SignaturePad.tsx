@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
-import { View, StyleSheet, Text, Alert } from 'react-native';
-import Signature, { SignatureViewRef }  from 'react-native-signature-canvas';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, StyleSheet, Text, Platform } from 'react-native';
+import Signature, { SignatureViewRef } from 'react-native-signature-canvas';
 import { Button } from '../';
 import { colors, typography, spacing } from '../../../utils/theme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -18,6 +18,7 @@ const SignaturePad: React.FC<SignaturePadProps> = ({
 }) => {
   const signatureRef = useRef<SignatureViewRef | null>(null);
   const [signing, setSigning] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
 
   // Generate signature filename
   const generateSignatureFilename = () => {
@@ -28,46 +29,47 @@ const SignaturePad: React.FC<SignaturePadProps> = ({
     return `${carrierNameFormatted}-${day}_${time}-Signature.jpg`;
   };
 
-  // Called when user completes signature
+  // Handle signature capture
   const handleSignature = (signature: string) => {
     setSigning(false);
-    if (signature.length < 100) {
-      // Empty or nearly empty signature
-      Alert.alert('Error', 'Please provide a valid signature');
-      return;
-    }
-
     const signatureName = generateSignatureFilename();
     onSignatureCapture(signature, signatureName);
-  };
-
-  // Handle errors
-  const handleError = (error: Error) => {
-    console.error('Signature error:', error);
-    setSigning(false);
-    Alert.alert('Error', 'Failed to capture signature');
   };
 
   // Clear signature pad
   const handleClear = () => {
     if (signatureRef.current) {
       signatureRef.current.clearSignature();
+      setHasSignature(false);
     }
   };
 
   // Accept signature
   const handleAccept = () => {
+    if (!hasSignature) return;
+    
     setSigning(true);
     if (signatureRef.current) {
       signatureRef.current.readSignature();
     }
   };
 
+  // Handle when drawing ends
+  const handleEnd = () => {
+    setHasSignature(true);
+  };
+
   // Web and mobile styles for the signature canvas
-  const style = `.m-signature-pad--footer {display: none; margin: 0px;}
-  .m-signature-pad {width: 100%; height: 100%; border: none; box-shadow: none; margin: 0;}
-  .m-signature-pad--body {border: none; margin: 0;}
-  body,html {width: 100%; height: 100%; margin: 0;}`;
+  const style = `
+    .m-signature-pad--footer {display: none; margin: 0px;}
+    .m-signature-pad {box-shadow: none; border: none; margin: 0px; height: 100%;}
+    .m-signature-pad--body {border: none; margin: 0px; height: 100%;}
+    canvas {
+      width: 100%;
+      height: 100%;
+      ${Platform.OS === 'android' ? 'touch-action: none !important;' : ''}
+    }
+  `;
 
   return (
     <View style={styles.container}>
@@ -77,15 +79,13 @@ const SignaturePad: React.FC<SignaturePadProps> = ({
         <Signature
           ref={signatureRef}
           onOK={handleSignature}
-          onEnd={handleAccept}
+          onEnd={handleEnd}
           webStyle={style}
           backgroundColor={colors.background}
           penColor={colors.primary}
           imageType="image/jpeg"
+          androidHardwareAccelerationDisabled={Platform.OS === 'android'}
           descriptionText=""
-          dotSize={1}
-          minWidth={2}
-          maxWidth={3}
         />
       </View>
       
@@ -95,19 +95,18 @@ const SignaturePad: React.FC<SignaturePadProps> = ({
           onPress={handleClear}
           variant="outline"
           style={styles.button}
-          icon={<MaterialIcons name="clear" size={18} color={colors.primary} />}
         />
         <Button
           title="Accept Signature"
           onPress={handleAccept}
           style={styles.button}
           loading={signing}
-          icon={<MaterialIcons name="check" size={18} color={colors.background} />}
+          disabled={!hasSignature}
         />
       </View>
       
       <Text style={styles.instructions}>
-        Please sign above with your finger and tap 'Accept Signature' when you're satisfied with your signature.
+        Please sign above with your finger and tap 'Accept Signature' when finished.
       </Text>
     </View>
   );
