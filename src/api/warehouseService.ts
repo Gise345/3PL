@@ -7,6 +7,9 @@ export interface Operator {
 }
 
 export const warehouseService = {
+  /**
+   * Get list of warehouse operators
+   */
   getWarehouseOperators: async (): Promise<Operator[]> => {
     try {
       const response = await api.get('/warehouse/workflow/warehouse-operators');
@@ -20,6 +23,10 @@ export const warehouseService = {
     }
   },
   
+  /**
+   * Check details of an order by tracking number
+   * @param orderTrackNumber Tracking number or order number to check
+   */
   checkOrderDetails: async (orderTrackNumber: string): Promise<any> => {
     try {
       const response = await api.get('/warehouse/systems/door/check-order', {
@@ -31,6 +38,10 @@ export const warehouseService = {
     }
   },
   
+  /**
+   * Associate a package with a cage
+   * @param params Parameters for scan-to-cage operation
+   */
   scanToCage: async (params: {
     orderTrackNumber: string;
     operatorId: number;
@@ -39,6 +50,21 @@ export const warehouseService = {
   }): Promise<any> => {
     try {
       const response = await api.get('/warehouse/systems/door/scan-to-cage', { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+  
+  /**
+   * Validate an order number
+   * @param orderNumber Order number to validate
+   */
+  checkOrderNumber: async (orderNumber: string): Promise<any> => {
+    try {
+      const response = await api.get('/warehouse/systems/door/check-order-number', {
+        params: { orderNumber }
+      });
       return response.data;
     } catch (error) {
       throw error;

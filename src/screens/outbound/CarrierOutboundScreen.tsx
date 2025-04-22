@@ -126,11 +126,11 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
     companyCode: 'OUT',
     referenceNumber: selectedCarrier?.name,
     onImageCaptured: (imageUri, imageName) => {
-      // Save the captured photo data regardless of which step we're on
+      console.log('Image captured:', imageUri);
+      // Update Redux state with new photo regardless of current step
       dispatch(setParcelPhoto({ uri: imageUri, name: imageName }));
       
-      // Only advance to the next step if we're on the capture-photo step
-      // If we're on summary, we stay there
+      // Only advance to the next step if we're not already in summary
       if (step === 'capture-photo') {
         setStep('driver-reg');
       }
@@ -246,19 +246,24 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
 
   // Handle number of parcels input
  const handleNumberOfParcelsInput = (value: string) => {
+  // Allow empty input when user is clearing the field
   if (value === '') {
-    // Allow empty string (when deleting)
     dispatch(setNumberOfParcels(0));
-  } else {
-    const parsedValue = parseInt(value, 10);
-    if (!isNaN(parsedValue) && parsedValue >= 0) {
-      dispatch(setNumberOfParcels(parsedValue));
-    }
+    return;
+  }
+  
+  // Remove leading zeros and parse the number
+  const parsedValue = parseInt(value.replace(/^0+/, ''), 10);
+  
+  // Only update state if we have a valid number
+  if (!isNaN(parsedValue)) {
+    dispatch(setNumberOfParcels(parsedValue));
   }
 };
 
   // Handle photo capture
   const handleTakeParcelPhoto = () => {
+    console.log('Opening camera for parcel photo...');
     openCamera('transit', 'Parcels');
   };
 
@@ -293,11 +298,16 @@ const CarrierOutboundScreen: React.FC<CarrierOutboundScreenProps> = ({ navigatio
   // Handle back navigation
   const handleBack = () => {
     if (step !== 'select-carrier') {
-      // If we're not on the first step, go back to carrier selection
-      dispatch(reset());
-      setStep('select-carrier');
+      // Only go back one step, do NOT reset here
+      const previousSteps: Record<string, string> = {
+        summary: 'driver-reg',
+        'capture-signature': 'driver-reg',
+        'driver-reg': 'capture-photo',
+        'capture-photo': 'confirm-parcels',
+        'confirm-parcels': 'select-carrier',
+      };
+      setStep(previousSteps[step] as any);
     } else {
-      // If we're already on the first step, navigate back
       navigation.goBack();
     }
   };
@@ -511,16 +521,9 @@ const renderSummary = () => (
           <View style={styles.photoPreviewItem}>
             <Text style={styles.photoLabel}>Parcel Photo</Text>
             {parcelPhoto ? (
-              <TouchableOpacity 
-                style={styles.photoWrapper}
-                onPress={handleTakeParcelPhoto} // Changed to directly open camera
-                activeOpacity={0.8}
-              >
+              <View style={styles.photoWrapper}>
                 <Image source={{ uri: parcelPhoto }} style={styles.photoPreview} />
-                <View style={styles.editOverlay}>
-                  <Text style={styles.editOverlayText}>Edit</Text>
-                </View>
-              </TouchableOpacity>
+              </View>
             ) : (
               <TouchableOpacity 
                 style={[styles.photoWrapper, styles.photoPlaceholder]}
@@ -534,19 +537,9 @@ const renderSummary = () => (
           <View style={styles.photoPreviewItem}>
             <Text style={styles.photoLabel}>Signature</Text>
             {signatureImage ? (
-              <TouchableOpacity 
-                style={styles.photoWrapper}
-                onPress={() => {
-                  // Open signature pad directly in summary view
-                  setShowSignaturePad(true);
-                }}
-                activeOpacity={0.8}
-              >
+              <View style={styles.photoWrapper}>
                 <Image source={{ uri: signatureImage }} style={styles.photoPreview} />
-                <View style={styles.editOverlay}>
-                  <Text style={styles.editOverlayText}>Edit</Text>
-                </View>
-              </TouchableOpacity>
+              </View>
             ) : (
               <TouchableOpacity 
                 style={[styles.photoWrapper, styles.photoPlaceholder]}
@@ -647,25 +640,51 @@ const renderStepIndicators = () => {
   const currentStepIndex = steps.findIndex(s => s.key === step);
   
   // Track completed steps - consider any step before the current highest step as completed
-  const highestCompletedIndex = Math.max(
-    steps.findIndex(s => s.key === 'summary' && signatureImage), // Summary requires signature
-    steps.findIndex(s => s.key === 'capture-signature' && driverReg.length >= 4), // Signature requires driver reg
-    steps.findIndex(s => s.key === 'driver-reg' && parcelPhoto), // Driver reg requires photo
-    steps.findIndex(s => s.key === 'capture-photo' && numberOfParcels > 0), // Photo requires parcels
-    steps.findIndex(s => s.key === 'confirm-parcels' && selectedCarrier), // Confirm requires carrier
-    0 // Always consider first step as accessible
-  );
+  const highestCompletedIndex = (() => {
+    // If we have a signature, we've completed all steps
+    if (signatureImage && step === 'summary') {
+      return 5; // All steps complete
+    }
+    
+    // If we're on signature step or reached it, we completed through driver reg
+    if (step === 'capture-signature' || (signatureImage && driverReg.length >= 4)) {
+      return 4;
+    }
+    
+    // If we're on driver reg step or reached it, we completed through photo
+    if (step === 'driver-reg' || (driverReg.length >= 4 && parcelPhoto)) {
+      return 3;
+    }
+    
+    // If we're on photo step or reached it, we completed through parcels
+    if (step === 'capture-photo' || (parcelPhoto && numberOfParcels > 0)) {
+      return 2;
+    }
+    
+    // If we're on parcels step or reached it, we completed carrier selection
+    if (step === 'confirm-parcels' || (numberOfParcels > 0 && selectedCarrier)) {
+      return 1;
+    }
+    
+    // If we have a carrier selected, we've at least completed step 1
+    if (selectedCarrier) {
+      return 0;
+    }
+    
+    // Default - just the initial step is accessible
+    return 0;
+  })();
   
   // Function to handle step navigation
   const navigateToStep = (targetStep: string, targetIndex: number) => {
-    // Special cases for Summary step (step 6)
+    // Always allow navigation to the photo capture step from summary
+    if (step === 'summary' && targetStep === 'capture-photo') {
+      setStep(targetStep as any);
+      return;
+    }
+    
+    // Special cases for Summary step
     if (step === 'summary') {
-      if (targetStep === 'capture-photo') {
-        // Open camera directly instead of going back to photo step
-        handleTakeParcelPhoto();
-        return;
-      }
-      
       if (targetStep === 'capture-signature') {
         // Open signature pad directly instead of going to signature step
         setShowSignaturePad(true);
