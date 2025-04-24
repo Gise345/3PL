@@ -15,12 +15,13 @@ Animated,
 Platform,
 Dimensions,
 SafeAreaView,
-Modal
+Modal,
+Keyboard
 } from 'react-native';
 import { DispatchCagesScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Button, PhotoCapture } from '../../components/common';
+import { Button, PhotoCapture, CameraModal } from '../../components/common';
 import SignaturePad from '../../components/common/signature/SignaturePad';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCamera } from '../../hooks/useCamera';
@@ -54,6 +55,56 @@ const { width } = Dimensions.get('window');
 const DispatchCagesScreen: React.FC<DispatchCagesScreenProps> = ({ navigation }) => {
 const { warehouse } = useAppSelector((state) => state.settings);
 
+// Custom alert prompt for Android (since Alert.prompt is iOS-only)
+const showEditRegistrationDialog = (
+  currentValue: string,
+  onSave: (newValue: string) => void
+) => {
+  if (Platform.OS === 'ios') {
+    Alert.prompt(
+      'Edit Registration',
+      'Update the vehicle registration number',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Save',
+          onPress: (value?: string) => {
+            if (value && value.trim().length >= 3) {
+              onSave(value.trim());
+            }
+          },
+        },
+      ],
+      'plain-text',
+      currentValue,
+      'default'
+    );
+  } else {
+    // For Android, we'd ideally use a custom dialog component
+    // For simplicity in this example, we'll use a regular alert with instructions
+    Alert.alert(
+      'Edit Registration',
+      'To edit registration, clear current value and enter a new one below.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear & Edit',
+          onPress: () => {
+            // Clear the current registration to allow editing
+            onSave('');
+          },
+        },
+      ]
+    );
+  }
+};
+
 // State for carriers and cages
 const [loading, setLoading] = useState(false);
 const [submitting, setSubmitting] = useState(false);
@@ -72,6 +123,9 @@ const [parcelPhotoName, setParcelPhotoName] = useState<string | null>(null);
 const [signatureImage, setSignatureImage] = useState<string | null>(null);
 const [signatureImageName, setSignatureImageName] = useState<string | null>(null);
 const [showSignaturePad, setShowSignaturePad] = useState(false);
+const [categoryName, setCategoryName] = useState<string>('Truck');
+const [cameraType, setCameraType] = useState<'inbound' | 'transit' | 'product' | 'mrn' | 'order-check'>('transit');
+
 
 // Sound players for feedback
 const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -87,16 +141,23 @@ const [scannedData, setScannedData] = useState<string | null>(null);
 
 // Camera functionality
 const { 
-  openCamera, 
-  handleImageCaptured 
+  showCamera,
+  capturedImageUri,
+  uploading,
+  openCamera,
+  closeCamera,
+  handleImageCaptured,
 } = useCamera({
   companyCode: 'OUT',
   referenceNumber: pickedCarrier || undefined,
   onImageCaptured: (imageUri, imageName) => {
+    // Make sure we're actually updating the state with the captured image
+    console.log('Image captured:', imageUri, imageName);
     setParcelPhoto(imageUri);
     setParcelPhotoName(imageName);
   }
 });
+
 
 // Reference to TextInput for focusing
 const cageIdInputRef = useRef<TextInput>(null);
@@ -280,6 +341,8 @@ const startDispatchProcess = () => {
 // Handle truck photo capture
 const handleTakeParcelPhoto = () => {
   openCamera('transit', 'Truck');
+  setCameraType('transit');
+  openCamera('transit', 'Truck');
 };
 
 // Handle setting driver registration
@@ -288,10 +351,30 @@ const handleConfirmDriverReg = () => {
     Alert.alert('Error', 'Please enter a valid registration number');
     return;
   }
+ 
+  // Set driver reg in uppercase for consistency
+  setDriverReg(driverReg.toUpperCase());
   
-  // Show signature pad
-  setShowSignaturePad(true);
+  // Close keyboard
+  Keyboard.dismiss();
+  
+  // Here we could toggle a state to hide the input section if desired
+  setShowRegistrationInput(false);
 };
+
+const [showRegistrationInput, setShowRegistrationInput] = useState(true);
+
+// handler for editing registration
+const handleEditRegistration = () => {
+  setShowRegistrationInput(true);
+};
+
+// Handler for clearing registration
+const handleClearRegistration = () => {
+  setDriverReg('');
+  setShowRegistrationInput(true);
+};
+
 
 // Handle signature capture
 const handleSignatureCaptured = (signatureUri: string, signatureName: string) => {
@@ -395,6 +478,7 @@ const renderCarrierSelection = () => (
         {carriers.length > 0 ? (
           <>
             <View style={styles.pickerContainer}>
+              {/* Use contentContainerStyle instead of style for the FlatList for better flexibility */}
               <FlatList
                 data={carriers}
                 keyExtractor={(item, index) => `carrier-${index}`}
@@ -419,7 +503,13 @@ const renderCarrierSelection = () => (
                     )}
                   </TouchableOpacity>
                 )}
+                contentContainerStyle={{
+                  // This will allow proper sizing based on content
+                  flexGrow: 1,
+                }}
                 style={styles.carrierList}
+                // Add this to ensure list doesn't grow too large with many items
+                ListEmptyComponent={<Text style={styles.emptyMessage}>No carriers available</Text>}
               />
             </View>
             
@@ -563,10 +653,19 @@ const renderDispatchProcess = () => (
         <Text style={styles.summaryValue}>{cagesToDispatch.length}</Text>
       </View>
       
+      {/* Registration display in summary with edit/delete button */}
       {driverReg && (
         <View style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>Registration:</Text>
-          <Text style={styles.summaryValue}>{driverReg.toUpperCase()}</Text>
+          <View style={styles.editableValue}>
+            <Text style={styles.summaryValue}>{driverReg.toUpperCase()}</Text>
+            <TouchableOpacity 
+              style={styles.editButton}
+              onPress={handleClearRegistration}
+            >
+              <MaterialIcons name="close" size={18} color={COLORS.error} />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
       
@@ -574,7 +673,15 @@ const renderDispatchProcess = () => (
         <View style={styles.photoContainer}>
           <Text style={styles.photoLabel}>Truck Photo</Text>
           {parcelPhoto ? (
-            <Image source={{ uri: parcelPhoto }} style={styles.photo} />
+            <View>
+              <Image source={{ uri: parcelPhoto }} style={styles.photo} />
+              <TouchableOpacity 
+                style={styles.retakePhotoButton}
+                onPress={handleTakeParcelPhoto}
+              >
+                <MaterialIcons name="refresh" size={18} color="white" />
+              </TouchableOpacity>
+            </View>
           ) : (
             <TouchableOpacity 
               style={styles.photoPlaceholder}
@@ -589,60 +696,71 @@ const renderDispatchProcess = () => (
         <View style={styles.photoContainer}>
           <Text style={styles.photoLabel}>Driver Signature</Text>
           {signatureImage ? (
-            <Image source={{ uri: signatureImage }} style={styles.photo} />
-          ) : (
-            <View style={styles.photoPlaceholder}>
-              <MaterialIcons name="gesture" size={36} color={COLORS.border} />
-              <Text style={styles.photoPlaceholderText}>Complete registration first</Text>
+            <View>
+              <Image source={{ uri: signatureImage }} style={styles.photo} />
+              <TouchableOpacity 
+                style={styles.retakePhotoButton}
+                onPress={() => setShowSignaturePad(true)}
+              >
+                <MaterialIcons name="refresh" size={18} color="white" />
+              </TouchableOpacity>
             </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.photoPlaceholder}
+              onPress={() => {
+                if (driverReg && driverReg.length >= 3) {
+                  setShowSignaturePad(true);
+                } else {
+                  Alert.alert(
+                    'Registration Required',
+                    'Please enter a valid registration number first'
+                  );
+                }
+              }}
+            >
+              <MaterialIcons name="gesture" size={36} color={COLORS.border} />
+              <Text style={styles.photoPlaceholderText}>
+                {driverReg && driverReg.length >= 3 ? 'Tap to capture' : 'Complete registration first'}
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
     </View>
     
-    {!parcelPhoto && (
-      <PhotoCapture
-        title="Capture Truck Image"
-        cameraType="transit"
-        category="Truck"
-        companyCode="OUT"
-        referenceNumber={pickedCarrier || undefined}
-        onImageCaptured={(imageUri, imageName) => {
-          setParcelPhoto(imageUri);
-          setParcelPhotoName(imageName);
-        }}
-      />
-    )}
-    
-    {parcelPhoto && !driverReg && (
+    {/* Registration input section - separate from summary */}
+    {showRegistrationInput && (
       <View style={styles.inputSection}>
-        <Text style={styles.inputLabel}>Registration Number</Text>
-        <TextInput
-          style={styles.registrationInput}
-          value={driverReg}
-          onChangeText={setDriverReg}
-          placeholder="Enter vehicle registration"
-          placeholderTextColor={COLORS.textLight}
-          autoCapitalize="characters"
-        />
-        <Button
-          title="Confirm Registration"
-          onPress={handleConfirmDriverReg}
-          style={styles.actionButton}
-          disabled={driverReg.length < 3}
-        />
+        <Text style={styles.inputLabel}>Vehicle Registration Number</Text>
+        <View style={styles.registrationInputContainer}>
+          <TextInput
+            style={styles.registrationFieldInput}
+            value={driverReg}
+            onChangeText={setDriverReg}
+            placeholder="Enter registration"
+            placeholderTextColor={COLORS.textLight}
+            autoCapitalize="characters"
+          />
+          <TouchableOpacity 
+            style={[
+              styles.confirmButton,
+              driverReg.length < 3 && styles.disabledButton
+            ]}
+            onPress={handleConfirmDriverReg}
+            disabled={driverReg.length < 3}
+          >
+            <Text style={styles.confirmButtonText}>Confirm</Text>
+          </TouchableOpacity>
+        </View>
+        {driverReg && driverReg.length < 3 && (
+          <Text style={styles.validationText}>Registration must be at least 3 characters</Text>
+        )}
       </View>
     )}
     
-    {parcelPhoto && driverReg && !signatureImage && (
-      <Button
-        title="Capture Driver Signature"
-        onPress={() => setShowSignaturePad(true)}
-        style={styles.actionButton}
-      />
-    )}
-    
-    {parcelPhoto && driverReg && signatureImage && (
+    {/* Submit button - enabled when all required fields are present */}
+    {(parcelPhoto && driverReg && driverReg.length >= 3 && signatureImage) ? (
       <Button
         title="Submit Dispatch"
         onPress={handleSubmitDispatch}
@@ -650,6 +768,12 @@ const renderDispatchProcess = () => (
         loading={submitting}
         disabled={submitting}
       />
+    ) : (
+      <Text style={styles.instructionText}>
+        {!parcelPhoto ? '• Please capture a truck photo\n' : ''}
+        {!driverReg || driverReg.length < 3 ? '• Please enter a valid registration number\n' : ''}
+        {!signatureImage ? '• Please capture driver signature' : ''}
+      </Text>
     )}
   </View>
 );
@@ -658,6 +782,7 @@ const renderDispatchProcess = () => (
 const openScanner = () => {
   setShowScanner(true);
 };
+
 
 return (
   <SafeAreaView style={styles.safeArea}>
@@ -702,6 +827,17 @@ return (
         {pickedCarrier && dispatchProcess && renderDispatchProcess()}
       </Animated.View>
     </ScrollView>
+
+        {/* Camera Modal */}
+        <CameraModal
+          visible={showCamera}
+          onClose={closeCamera}
+          onImageCaptured={handleImageCaptured}
+          category={categoryName || 'Truck'} // Provide default value
+          type={cameraType || 'transit'} // Provide default value
+          companyCode="OUT"
+          referenceNumber={pickedCarrier || ''}
+    />
     
     {/* Signature Pad Modal */}
     <Modal
@@ -783,13 +919,14 @@ const styles = StyleSheet.create({
 safeArea: {
   flex: 1,
   backgroundColor: COLORS.background,
+  paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
 },
 header: {
   flexDirection: 'row',
   justifyContent: 'space-between',
   alignItems: 'center',
   paddingHorizontal: 16,
-  paddingVertical: 16,
+  paddingVertical: 20,
   backgroundColor: COLORS.background,
   ...Platform.select({
     ios: {
@@ -849,12 +986,14 @@ scrollView: {
 scrollContent: {
   padding: 16,
   paddingBottom: 30,
+  flexGrow: 1,
 },
 section: {
   backgroundColor: COLORS.card,
   borderRadius: 16,
   padding: 16,
   marginBottom: 16,
+  minHeight: 100,
   ...Platform.select({
     ios: {
       shadowColor: COLORS.shadow,
@@ -884,7 +1023,6 @@ pickerContainer: {
   backgroundColor: COLORS.surface,
   borderRadius: 12,
   marginBottom: 16,
-  maxHeight: 300,
   ...Platform.select({
     ios: {
       shadowColor: COLORS.shadow,
@@ -898,7 +1036,8 @@ pickerContainer: {
   }),
 },
 carrierList: {
-  maxHeight: 250,
+  minHeight: 50,
+  width: '100%',
 },
 carrierItem: {
   flexDirection: 'row',
@@ -1094,7 +1233,7 @@ noCagesText: {
   padding: 16,
 },
 dispatchButton: {
-  backgroundColor: COLORS.accent,
+  backgroundColor: COLORS.primary,
   marginTop: 8,
 },
 summaryCard: {
@@ -1209,8 +1348,57 @@ registrationInput: {
   marginBottom: 16,
 },
 submitButton: {
-  backgroundColor: COLORS.accent,
+  backgroundColor: COLORS.primary,
   marginTop: 16,
+},
+// Editable values in summary
+editableValue: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+editButton: {
+  padding: 6,
+  marginLeft: 8,
+},
+inlineSummaryInput: {
+  flex: 1,
+  height: 36,
+  backgroundColor: COLORS.inputBackground,
+  borderWidth: 1,
+  borderColor: COLORS.border,
+  borderRadius: 6,
+  paddingHorizontal: 8,
+  fontSize: 14,
+  color: COLORS.text,
+},
+retakePhotoButton: {
+  position: 'absolute',
+  bottom: 8,
+  right: 8,
+  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  width: 32,
+  height: 32,
+  borderRadius: 16,
+  justifyContent: 'center',
+  alignItems: 'center',
+  ...Platform.select({
+    ios: {
+      shadowColor: COLORS.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 2,
+    },
+    android: {
+      elevation: 3,
+    },
+  }),
+},
+instructionText: {
+  fontSize: 14,
+  color: COLORS.textLight,
+  textAlign: 'center',
+  marginTop: 16,
+  lineHeight: 20,
 },
 loadingOverlay: {
   ...StyleSheet.absoluteFillObject,
@@ -1320,7 +1508,48 @@ scannerPlaceholderText: {
 },
 simulateScanButton: {
   width: 200,
-}
+},
+emptyMessage: {
+  textAlign: 'center',
+  padding: 20,
+  color: COLORS.textLight,
+},
+registrationInputContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+registrationFieldInput: {
+  flex: 1,
+  backgroundColor: COLORS.inputBackground,
+  borderWidth: 1,
+  borderColor: COLORS.border,
+  borderRadius: 8,
+  padding: 12,
+  fontSize: 16,
+  color: COLORS.text,
+  marginRight: 8,
+},
+confirmButton: {
+  backgroundColor: COLORS.primary,
+  paddingVertical: 12,
+  paddingHorizontal: 16,
+  borderRadius: 8,
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+confirmButtonText: {
+  color: 'white',
+  fontWeight: '600',
+  fontSize: 14,
+},
+validationText: {
+  fontSize: 12,
+  color: COLORS.error,
+  marginTop: 5,
+},
+disabledButton: {
+  backgroundColor: COLORS.textLight,
+},
 });
 
 export default DispatchCagesScreen;
