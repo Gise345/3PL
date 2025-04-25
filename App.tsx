@@ -6,6 +6,7 @@ import { store, persistor } from './src/store';
 import AppNavigator from './src/navigation/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
 import { colors } from './src/utils/theme';
+import { ToastProvider } from './src/components/common';
 
 export default function App() {
   // Initialize auth token from storage when app starts
@@ -24,7 +25,9 @@ export default function App() {
       <PersistGate loading={null} persistor={persistor}>
         <SafeAreaProvider>
           <StatusBar style="light" backgroundColor={colors.primary} />
+          <ToastProvider>
           <AppNavigator />
+        </ToastProvider>
         </SafeAreaProvider>
       </PersistGate>
     </Provider>

@@ -200,6 +200,7 @@ useEffect(() => {
   ]).start();
 }, []);
 
+
 // Load sound effects
 const loadSounds = async () => {
   try {
@@ -263,29 +264,53 @@ const handleCarrierChange = (event: any) => {
 };
 
 // Pick a carrier and fetch open cages
+// Pick a carrier and fetch open cages
 const pickCarrier = async () => {
   if (selectedCarrierIndex === null) {
     Alert.alert('Error', 'Please select a carrier');
     return;
   }
   
-  const carrier = carriers[selectedCarrierIndex];
-  setPickedCarrier(carrier);
-  await fetchOpenCages(carrier);
+  try {
+    const carrier = carriers[selectedCarrierIndex];
+    console.log("Selected carrier:", carrier); // Debug log
+    
+    // Set the picked carrier first
+    setPickedCarrier(carrier);
+    
+    // Then fetch open cages for this carrier
+    await fetchOpenCages(carrier);
+  } catch (error) {
+    console.error('Error in pickCarrier:', error);
+    Alert.alert('Error', 'Failed to process carrier selection');
+  }
 };
 
 // Fetch open cages for selected carrier
 const fetchOpenCages = async (carrier: string) => {
   setLoading(true);
   try {
+    // Call the API to get open cages and packages
     const cagePackages = await cageService.getOpenCagesPackages(carrier, warehouse);
     
-    // Extract unique cage IDs (a cage might have multiple packages)
-    const uniqueCageIds = Array.from(new Set(cagePackages.map(item => item.cage_id)));
-    setOpenCages(uniqueCageIds);
+    if (cagePackages) {
+      console.log("Received cage packages:", cagePackages); // Debug log
+      
+      // Extract unique cage IDs (a cage might have multiple packages)
+      const uniqueCageIds = Array.from(new Set(cagePackages.map(item => item.cage_id)));
+      console.log("Unique cage IDs:", uniqueCageIds); // Debug log
+      
+      // Update the state with the open cages
+      setOpenCages(uniqueCageIds);
+    } else {
+      // Handle the case when no cages are returned
+      setOpenCages([]);
+      console.log("No open cages found for carrier:", carrier);
+    }
   } catch (error) {
     console.error('Error fetching open cages:', error);
     Alert.alert('Error', 'An error occurred while fetching open cages');
+    setOpenCages([]);
   } finally {
     setLoading(false);
   }
@@ -300,24 +325,36 @@ const focusCageIdField = () => {
 };
 
 // Handle cage ID scanning
+// Handle cage ID scanning
 const handleScanCage = () => {
   if (!cageIdField) return;
   
+  console.log("Scanning cage ID:", cageIdField);
+  console.log("Open cages:", openCages);
+  console.log("Cages to dispatch:", cagesToDispatch);
+  
   if (!openCages.includes(cageIdField)) {
     if (cagesToDispatch.includes(cageIdField)) {
+      console.log("Cage already scanned:", cageIdField);
       playErrorSound();
       Alert.alert('Error', 'Cage has already been scanned');
     } else {
+      console.log("Cage not found:", cageIdField);
       playErrorSound();
       Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
     }
   } else {
     // Valid cage - move from openCages to cagesToDispatch
-    setOpenCages(openCages.filter(id => id !== cageIdField));
-    setCagesToDispatch([...cagesToDispatch, cageIdField]);
+    console.log("Valid cage found, moving to dispatch list:", cageIdField);
+    
+    // Update state by removing from open cages and adding to dispatch cages
+    setOpenCages(prev => prev.filter(id => id !== cageIdField));
+    setCagesToDispatch(prev => [...prev, cageIdField]);
+    
     playSuccessSound();
   }
   
+  // Clear the input field and refocus
   setCageIdField('');
   setTimeout(focusCageIdField, 100);
 };
@@ -467,8 +504,9 @@ const resetCarrierSelection = () => {
 };
 
 // Render carrier selection view
+// Render carrier selection view
 const renderCarrierSelection = () => (
-  <View style={styles.section}>
+  <View style={[styles.section, {flex: 1}]}>
     <Text style={styles.sectionTitle}>Select Carrier</Text>
     
     {loading ? (
@@ -476,42 +514,35 @@ const renderCarrierSelection = () => (
     ) : (
       <>
         {carriers.length > 0 ? (
-          <>
-            <View style={styles.pickerContainer}>
-              {/* Use contentContainerStyle instead of style for the FlatList for better flexibility */}
-              <FlatList
-                data={carriers}
-                keyExtractor={(item, index) => `carrier-${index}`}
-                renderItem={({ item, index }) => (
-                  <TouchableOpacity
+          <View style={{flex: 1}}>
+            {/* Use FlatList directly without nesting it */}
+            <FlatList
+              data={carriers}
+              keyExtractor={(item, index) => `carrier-${index}`}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.carrierItem,
+                    selectedCarrierIndex === index && styles.selectedCarrierItem
+                  ]}
+                  onPress={() => setSelectedCarrierIndex(index)}
+                >
+                  <Text 
                     style={[
-                      styles.carrierItem,
-                      selectedCarrierIndex === index && styles.selectedCarrierItem
+                      styles.carrierName,
+                      selectedCarrierIndex === index && styles.selectedCarrierName
                     ]}
-                    onPress={() => setSelectedCarrierIndex(index)}
                   >
-                    <Text 
-                      style={[
-                        styles.carrierName,
-                        selectedCarrierIndex === index && styles.selectedCarrierName
-                      ]}
-                    >
-                      {item}
-                    </Text>
-                    {selectedCarrierIndex === index && (
-                      <MaterialIcons name="check-circle" size={24} color={COLORS.primary} />
-                    )}
-                  </TouchableOpacity>
-                )}
-                contentContainerStyle={{
-                  // This will allow proper sizing based on content
-                  flexGrow: 1,
-                }}
-                style={styles.carrierList}
-                // Add this to ensure list doesn't grow too large with many items
-                ListEmptyComponent={<Text style={styles.emptyMessage}>No carriers available</Text>}
-              />
-            </View>
+                    {item}
+                  </Text>
+                  {selectedCarrierIndex === index && (
+                    <MaterialIcons name="check-circle" size={24} color={COLORS.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={<Text style={styles.emptyMessage}>No carriers available</Text>}
+              style={styles.carrierList}
+            />
             
             <Button
               title="Select Carrier"
@@ -519,7 +550,7 @@ const renderCarrierSelection = () => (
               style={styles.actionButton}
               disabled={selectedCarrierIndex === null}
             />
-          </>
+          </View>
         ) : (
           <View style={styles.emptyStateContainer}>
             <Text style={styles.emptyStateIcon}>🚚</Text>
@@ -534,6 +565,7 @@ const renderCarrierSelection = () => (
   </View>
 );
 
+// Render cage scanning view
 // Render cage scanning view
 const renderCageScanning = () => (
   <View style={styles.fullSection}>
@@ -572,37 +604,48 @@ const renderCageScanning = () => (
       </View>
     </View>
     
+    {/* Cage lists container with auto-height based on content */}
     <View style={styles.cagesContainer}>
-      <View style={styles.cageListContainer}>
-        <Text style={styles.cageListTitle}>
-          Open Cages: <Text style={styles.cageCount}>{openCages.length}</Text>
-        </Text>
-        {openCages.length > 0 ? (
-          <FlatList
-            data={openCages}
-            keyExtractor={(item) => `open-${item}`}
-            renderItem={({ item }) => (
-              <View style={styles.cageItem}>
-                <Text style={styles.cageId}>{item}</Text>
-              </View>
-            )}
-            style={styles.cageList}
-          />
-        ) : (
-          <Text style={styles.noCagesText}>No open cages remaining</Text>
-        )}
-      </View>
+      {/* Open Cages section */}
+      // Render items with ScrollView for many items
+<View style={styles.cageListContainer}>
+  <Text style={styles.cageListTitle}>
+    Open Cages: <Text style={styles.cageCount}>{openCages.length}</Text>
+  </Text>
+  
+  {/* ScrollView with max height for many items */}
+  <ScrollView 
+    style={[
+      styles.cageItemsScrollView, 
+      openCages.length > 5 && styles.cageItemsScrollViewTall
+    ]}
+    nestedScrollEnabled={true}
+  >
+    <View style={styles.cageItemsContainer}>
+      {openCages.length > 0 ? (
+        openCages.map((item) => (
+          <View key={`open-${item}`} style={styles.cageItem}>
+            <Text style={styles.cageId}>{item}</Text>
+          </View>
+        ))
+      ) : (
+        <Text style={styles.noCagesText}>No open cages remaining</Text>
+      )}
+    </View>
+  </ScrollView>
+</View>
       
+      {/* Scanned Cages section */}
       <View style={styles.cageListContainer}>
         <Text style={styles.cageListTitle}>
           Scanned Cages: <Text style={styles.cageCount}>{cagesToDispatch.length}</Text>
         </Text>
-        {cagesToDispatch.length > 0 ? (
-          <FlatList
-            data={cagesToDispatch}
-            keyExtractor={(item) => `dispatch-${item}`}
-            renderItem={({ item }) => (
-              <View style={styles.cageItem}>
+        
+        {/* Render items directly instead of using FlatList */}
+        <View style={styles.cageItemsContainer}>
+          {cagesToDispatch.length > 0 ? (
+            cagesToDispatch.map((item) => (
+              <View key={`dispatch-${item}`} style={styles.cageItem}>
                 <Text style={styles.cageId}>{item}</Text>
                 <TouchableOpacity
                   style={styles.removeButton}
@@ -611,12 +654,11 @@ const renderCageScanning = () => (
                   <MaterialIcons name="close" size={18} color={COLORS.error} />
                 </TouchableOpacity>
               </View>
-            )}
-            style={styles.cageList}
-          />
-        ) : (
-          <Text style={styles.noCagesText}>No cages scanned yet</Text>
-        )}
+            ))
+          ) : (
+            <Text style={styles.noCagesText}>No cages scanned yet</Text>
+          )}
+        </View>
       </View>
     </View>
     
@@ -811,22 +853,20 @@ return (
       <View style={styles.headerPlaceholder} />
     </View>
     
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false}
-    >
+    {/* Main content - use conditional rendering instead of ScrollView */}
+    <View style={styles.mainContainer}>
       <Animated.View 
         style={{ 
           opacity: fadeIn,
-          transform: [{ translateY: slideUp }]
+          transform: [{ translateY: slideUp }],
+          flex: 1,
         }}
       >
         {!pickedCarrier && renderCarrierSelection()}
         {pickedCarrier && !dispatchProcess && renderCageScanning()}
         {pickedCarrier && dispatchProcess && renderDispatchProcess()}
       </Animated.View>
-    </ScrollView>
+    </View>
 
         {/* Camera Modal */}
         <CameraModal
@@ -1175,6 +1215,7 @@ scanButton: {
 cagesContainer: {
   flexDirection: 'row',
   marginBottom: 16,
+  
 },
 cageListContainer: {
   flex: 1,
@@ -1182,6 +1223,7 @@ cageListContainer: {
   borderRadius: 12,
   padding: 12,
   marginHorizontal: 4,
+  maxHeight: 220, 
   ...Platform.select({
     ios: {
       shadowColor: COLORS.shadow,
@@ -1194,6 +1236,9 @@ cageListContainer: {
     },
   }),
 },
+cageList: {
+  height: 150, // Fixed height for the FlatList
+},
 cageListTitle: {
   fontSize: 14,
   color: COLORS.text,
@@ -1205,8 +1250,8 @@ cageCount: {
   color: COLORS.primary,
   fontWeight: '700',
 },
-cageList: {
-  maxHeight: 200,
+cageItemsContainer: {
+  marginTop: 4,
 },
 cageItem: {
   flexDirection: 'row',
@@ -1549,6 +1594,21 @@ validationText: {
 },
 disabledButton: {
   backgroundColor: COLORS.textLight,
+},
+// Add these styles to the existing styles object
+mainContainer: {
+  flex: 1,
+  padding: 16,
+},
+cageListWrapper: {
+  height: 200, // Fixed height for the list container
+  flex: 1,
+},
+cageItemsScrollView: {
+  maxHeight: 150, // Default max height
+},
+cageItemsScrollViewTall: {
+  maxHeight: 200, // Taller when there are many items
 },
 });
 
