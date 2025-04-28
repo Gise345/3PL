@@ -158,6 +158,31 @@ const {
   }
 });
 
+// Helper to check if a scan appears complete
+const isCompleteScan = (text: string): boolean => {
+  // Customize based on your barcode format patterns
+  return text.length >= 8 && /^[A-Z0-9]+$/.test(text);
+};
+
+// Enhanced cage ID input handler
+const handleCageInput = (text: string) => {
+  setCageIdField(text);
+  
+  // Auto-submit if the input appears to be a complete scan
+  if (isCompleteScan(text)) {
+    handleScanCage(text);
+  }
+};
+
+// Add enhanced registration input handler
+const handleRegistrationInput = (text: string) => {
+  setDriverReg(text);
+  
+  // Auto-confirm if appears to be a complete registration (adapt as needed)
+  if (text.length >= 3 && /^[A-Z0-9]+$/.test(text)) {
+    handleConfirmDriverReg();
+  }
+};
 
 // Reference to TextInput for focusing
 const cageIdInputRef = useRef<TextInput>(null);
@@ -325,31 +350,31 @@ const focusCageIdField = () => {
 };
 
 // Handle cage ID scanning
-// Handle cage ID scanning
-const handleScanCage = () => {
-  if (!cageIdField) return;
+// Update your handleScanCage function to accept an optional parameter
+const handleScanCage = (scanValue: string = cageIdField) => {
+  if (!scanValue) return;
   
-  console.log("Scanning cage ID:", cageIdField);
+  console.log("Scanning cage ID:", scanValue);
   console.log("Open cages:", openCages);
   console.log("Cages to dispatch:", cagesToDispatch);
   
-  if (!openCages.includes(cageIdField)) {
-    if (cagesToDispatch.includes(cageIdField)) {
-      console.log("Cage already scanned:", cageIdField);
+  if (!openCages.includes(scanValue)) {
+    if (cagesToDispatch.includes(scanValue)) {
+      console.log("Cage already scanned:", scanValue);
       playErrorSound();
       Alert.alert('Error', 'Cage has already been scanned');
     } else {
-      console.log("Cage not found:", cageIdField);
+      console.log("Cage not found:", scanValue);
       playErrorSound();
       Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
     }
   } else {
     // Valid cage - move from openCages to cagesToDispatch
-    console.log("Valid cage found, moving to dispatch list:", cageIdField);
+    console.log("Valid cage found, moving to dispatch list:", scanValue);
     
     // Update state by removing from open cages and adding to dispatch cages
-    setOpenCages(prev => prev.filter(id => id !== cageIdField));
-    setCagesToDispatch(prev => [...prev, cageIdField]);
+    setOpenCages(prev => prev.filter(id => id !== scanValue));
+    setCagesToDispatch(prev => [...prev, scanValue]);
     
     playSuccessSound();
   }
@@ -584,17 +609,19 @@ const renderCageScanning = () => (
     <View style={styles.scannerSection}>
       <Text style={styles.scanInstructions}>Scan cage or enter cage ID:</Text>
       <View style={styles.scanInputContainer}>
-        <TextInput
-          ref={cageIdInputRef}
-          style={styles.scanInput}
-          value={cageIdField}
-          onChangeText={setCageIdField}
-          placeholder="Enter or scan cage ID"
-          placeholderTextColor={COLORS.textLight}
-          returnKeyType="go"
-          onSubmitEditing={handleScanCage}
-          autoCapitalize="characters"
-        />
+      <TextInput
+        ref={cageIdInputRef}
+        style={styles.scanInput}
+        value={cageIdField}
+        onChangeText={handleCageInput}
+        placeholder="Enter or scan cage ID"
+        placeholderTextColor={COLORS.textLight}
+        returnKeyType="go"
+        onSubmitEditing={() => handleScanCage()}
+        autoCapitalize="characters"
+        blurOnSubmit={false}
+        selectTextOnFocus={true}
+      />
         <TouchableOpacity 
           style={styles.scanButton}
           onPress={openScanner}
@@ -779,10 +806,12 @@ const renderDispatchProcess = () => (
           <TextInput
             style={styles.registrationFieldInput}
             value={driverReg}
-            onChangeText={setDriverReg}
+            onChangeText={handleRegistrationInput}
             placeholder="Enter registration"
             placeholderTextColor={COLORS.textLight}
             autoCapitalize="characters"
+            blurOnSubmit={false}
+            selectTextOnFocus={true}
           />
           <TouchableOpacity 
             style={[
@@ -907,38 +936,45 @@ return (
     </Modal>
 
     {/* Barcode Scanner Modal */}
-      <BarcodeScannerModal
-        visible={showScanner}
-        onClose={() => setShowScanner(false)}
-        
-        onBarcodeScanned={(barcode) => {
-          setCageIdField(barcode);
-          setShowScanner(false);
-          // Process the scanned cage immediately
-          setTimeout(() => {
-            if (barcode) {
-              // Check if the barcode is a valid cage
-              if (!openCages.includes(barcode)) {
-                if (cagesToDispatch.includes(barcode)) {
-                  playErrorSound();
-                  Alert.alert('Error', 'Cage has already been scanned');
-                } else {
-                  playErrorSound();
-                  Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
-                }
-              } else {
-                // Valid cage - move from openCages to cagesToDispatch
-                setOpenCages(openCages.filter(id => id !== barcode));
-                setCagesToDispatch([...cagesToDispatch, barcode]);
-                playSuccessSound();
-              }
-              // Reset the input field
-              setCageIdField('');
-            }
-          }, 300);
-        }}
-        title="Scan Cage ID"
-      />
+    <BarcodeScannerModal
+  visible={showScanner}
+  onClose={() => setShowScanner(false)}
+  onBarcodeScanned={(barcode) => {
+    // First close the scanner
+    setShowScanner(false);
+    
+    // Set the cage ID field
+    setCageIdField(barcode);
+    
+    // Process the scanned cage with a small delay to ensure state updates properly
+    setTimeout(() => {
+      if (barcode) {
+        // Check if the barcode is a valid cage
+        if (!openCages.includes(barcode)) {
+          if (cagesToDispatch.includes(barcode)) {
+            playErrorSound();
+            Alert.alert('Error', 'Cage has already been scanned');
+          } else {
+            playErrorSound();
+            Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
+          }
+        } else {
+          // Create new arrays instead of mutating state directly
+          const newOpenCages = [...openCages].filter(id => id !== barcode);
+          const newCagesToDispatch = [...cagesToDispatch, barcode];
+          
+          // Update state with new arrays
+          setOpenCages(newOpenCages);
+          setCagesToDispatch(newCagesToDispatch);
+          playSuccessSound();
+        }
+        // Reset the input field
+        setCageIdField('');
+      }
+    }, 300);
+  }}
+  title="Scan Cage ID"
+/>
     
     {/* Loading Overlay */}
     {(loading || submitting) && (
