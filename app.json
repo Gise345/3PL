@@ -33,7 +33,8 @@
     "owner": "giselle345-org",
     "plugins": [
       "expo-font",
-      "expo-barcode-scanner"
-    ]
+      "expo-camera"
+    ],
+    "platforms": ["android", "ios", "web"]
   }
 }

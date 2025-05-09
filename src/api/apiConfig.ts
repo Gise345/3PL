@@ -1,12 +1,12 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Base URLs based on environment
 const PRODUCTION_API_URL = 'https://reports.3p-logistics.co.uk/api/v1';
-const DEVELOPMENT_API_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000/api/v1'  // Android emulator
-  : 'http://localhost:3000/api/v1'; // iOS simulator
+const DEVELOPMENT_API_URL = Platform.OS === 'android'
+  ? 'https://reports.3p-logistics.co.uk/api/test/v1/' // Android emulator http://10.0.2.2:3000/api/v1
+  : 'https://reports.3p-logistics.co.uk/api/test/v1/'; // iOS simulator http://localhost:3000/api/v1
 
 // Determine if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
@@ -17,6 +17,9 @@ const api = axios.create({
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
+    // Default Authorization header from the original Vue app
+    'Authorization': 'Basic d2FyZWhvdXNlQWRtaW46M1BMJldIRChBUEkp',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
   },
 });
 
@@ -26,7 +29,8 @@ export const setAuthToken = async (token: string | null) => {
     api.defaults.headers.common['Authorization'] = `Basic ${token}`;
     await AsyncStorage.setItem('auth_token', token);
   } else {
-    delete api.defaults.headers.common['Authorization'];
+    // Revert to default Authorization if token is removed
+    api.defaults.headers.common['Authorization'] = 'Basic d2FyZWhvdXNlQWRtaW46M1BMJldIRChBUEkp';
     await AsyncStorage.removeItem('auth_token');
   }
 };

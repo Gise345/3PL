@@ -13,7 +13,7 @@ interface SettingsState {
 
 const initialState: SettingsState = {
   warehouse: 'TFH', // Default warehouse
-  isTestMode: false,
+  isTestMode: __DEV__, // Default to true in development
   isWifiConnected: false,
   ssid: '',
   selectedPrinter: null,

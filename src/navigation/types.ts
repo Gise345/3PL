@@ -10,6 +10,7 @@ export type RootStackParamList = {
   
   // Inbound Screens
   Inbound: undefined;
+  InboundDetail: { inbound: any };
   UnknownInbound: undefined;
   
   // Outbound Screens
@@ -31,6 +32,7 @@ export type RootStackParamList = {
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export type HomeScreenProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export type InboundScreenProps = NativeStackScreenProps<RootStackParamList, 'Inbound'>;
+export type InboundDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'InboundDetail'>;
 export type UnknownInboundScreenProps = NativeStackScreenProps<RootStackParamList, 'UnknownInbound'>;
 export type CarrierOutboundScreenProps = NativeStackScreenProps<RootStackParamList, 'CarrierOutbound'>;
 export type AdHocOutboundScreenProps = NativeStackScreenProps<RootStackParamList, 'AdHocOutbound'>;
