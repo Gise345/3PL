@@ -7,4 +7,4 @@ export * from './imageService';
 export * from './signatureService';
 export * from './carrierService';
 export * from './cageService';
-export * from './vendorCheckService';
+export * from './vendorCheckService'
