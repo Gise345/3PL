@@ -7,6 +7,8 @@ export { default as EmptyState } from './EmptyState';
 export { default as Card } from './Card';
 export { default as Toast } from './Toast';
 export { ToastProvider, useToast } from './ToastProvider';
+export { default as SegmentedBar } from './SegmentedBar';
+export { default as Picker } from './Picker';
 export * from './photo';
 export * from './camera';
 export * from '../signature';
