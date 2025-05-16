@@ -20,7 +20,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.3p-logistics.3pldoorapp"
+      "package": "com.3p-logistics.3pldoorapp",
+      "permissions": [
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_STATE",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,10 +37,33 @@
       }
     },
     "owner": "giselle345-org",
+    "scheme": "com.3p-logistics.3pldoorapp",
+
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to measure pallets"
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow $(PRODUCT_NAME) to access device motion for pallet measurements"
+        }
+      ],
       "expo-font",
-      "expo-camera"
+      "react-native-auth0",
+      "expo-secure-store",
+      [
+        "react-native-auth0", {
+        "domain": "your-auth0-domain.auth0.com"
+      }]
     ],
-    "platforms": ["android", "ios", "web"]
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ]
   }
 }

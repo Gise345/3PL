@@ -54,6 +54,8 @@ api.interceptors.response.use(
       // Clear token if unauthorized
       await setAuthToken(null);
       // Can add redirect to login logic here
+      await AsyncStorage.setItem('auth_state_changed', 'true');
+
     }
     
     return Promise.reject(error);

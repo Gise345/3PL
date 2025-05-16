@@ -1,10 +1,15 @@
-// Note: You'll need to replace these with your actual Auth0 credentials
-export const AUTH0_DOMAIN = 'your-domain.auth0.com';
-export const AUTH0_CLIENT_ID = 'your-client-id';
+// Get Auth0 credentials from environment or use fallbacks
+export const AUTH0_DOMAIN = '3p-logistics.eu.auth0.com'; // Replace with actual domain from existing app
+export const AUTH0_CLIENT_ID = 'Hn8W3PEXMzgaMPNXywgnkbg4SrngbtzY'; // Replace with actual client ID from existing app
 
-// Audience and scope
-export const AUTH0_AUDIENCE = 'https://your-api-identifier';
-export const AUTH0_SCOPE = 'openid profile email offline_access';
+// Auth0 configuration
+export const auth0Config = {
+  domain: AUTH0_DOMAIN,
+  clientId: AUTH0_CLIENT_ID,
 
-// Callback URL for Auth0 (used in the native app)
-export const AUTH0_CALLBACK_URL = 'com.your3plapp://callback';
+  audience: 'https://api.3p-logistics.co.uk', // Replace with the actual API identifier
+  scope: 'openid profile email offline_access',
+};
+
+// Redirect URL (needs to match what's configured in Auth0 dashboard)
+export const redirectUri = 'com.3p-logistics.3pldoorapp://3p-logistics.auth0.com/android/com.3p-logistics.3pldoorapp/callback';

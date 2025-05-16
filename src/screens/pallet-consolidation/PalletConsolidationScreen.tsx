@@ -12,12 +12,15 @@ import {
   ScrollView,
   StatusBar
 } from 'react-native';
-import { Page, Button, Input } from '../../components/common';
+import { Page, Button, Input, Card } from '../../components/common';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Clipboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { palletService, PalletType, Pallet, PalletStu } from '../../api/palletService';
+import { useNavigation } from '@react-navigation/native';
+import PalletMeasurement from '../../components/pallet/PalletMeasurement';
+
 
 // Define modern color palette with teal primary color to match other screens
 const COLORS = {
@@ -47,6 +50,8 @@ const PalletConsolidationScreen: React.FC = () => {
   const [palletHeight, setPalletHeight] = useState('');
   const [palletIdInput, setPalletIdInput] = useState('');
   const [palletIdError, setPalletIdError] = useState('');
+  const navigation = useNavigation();
+
   
   // Animation values
   const [fadeIn] = useState(new Animated.Value(0));
@@ -370,12 +375,26 @@ const PalletConsolidationScreen: React.FC = () => {
           {!activePallet ? (
             // Select or Load Pallet View
             <>
-              <Animated.View style={{ transform: [{ scale: titleScale }] }}>
-                <Text style={styles.headerTitle}>
-                  <Text style={styles.headerTitleText}>Pallet </Text>
-                  <Text style={[styles.headerTitleText, styles.headerTitleAccent]}>Consolidation</Text>
-                </Text>
-              </Animated.View>
+               <View style={styles.header}>
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => navigation.goBack()}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.backButtonText}>←</Text>
+                </TouchableOpacity>
+                
+                <Animated.Text 
+                  style={[
+                    styles.headerTitle,
+                    { transform: [{ scale: titleScale }] }
+                  ]}
+                >
+                  <Text style={styles.headerTitleText}>Pallet Consolidation </Text>
+                </Animated.Text>
+                
+                <View style={styles.headerPlaceholder} />
+              </View>
 
               <View style={styles.card}>
                 <Text style={styles.sectionTitle}>Create New Pallet</Text>
@@ -417,16 +436,24 @@ const PalletConsolidationScreen: React.FC = () => {
             // Active Pallet View
             <>
               <View style={styles.header}>
-                <Text style={styles.palletInfoTitle}>
-                  Pallet #{activePallet.id}
-                </Text>
                 <TouchableOpacity
                   style={styles.backButton}
                   onPress={() => setActivePallet(null)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.backButtonText}>← Back</Text>
+                  <Text style={styles.backButtonText}>←</Text>
                 </TouchableOpacity>
+                
+                <Animated.Text 
+                  style={[
+                    styles.headerTitle,
+                    { transform: [{ scale: titleScale }] }
+                  ]}
+                >
+                  <Text style={styles.headerTitleText}>Pallet #{activePallet.id}</Text>
+                </Animated.Text>
+                
+                <View style={styles.headerPlaceholder} />
               </View>
 
               <View style={styles.card}>
@@ -583,14 +610,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   headerTitle: {
-    marginBottom: 20,
-    marginTop: 10,
+    flex: 1,
+    textAlign: 'center',
   },
   headerTitleText: {
-    fontSize: 30,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORS.text,
-    letterSpacing: 0.5,
   },
   headerTitleAccent: {
     color: COLORS.primary,
@@ -685,7 +711,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: COLORS.background,
+    borderBottomWidth: 1,  // Add this line for the separator
+    borderBottomColor: COLORS.border,  // Add this line for the separator color
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   palletInfoTitle: {
     fontSize: 24,
@@ -693,10 +734,12 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   backButton: {
-    backgroundColor: COLORS.background,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.card,
     ...Platform.select({
       ios: {
         shadowColor: COLORS.shadow,
@@ -710,9 +753,9 @@ const styles = StyleSheet.create({
     }),
   },
   backButtonText: {
+    fontSize: 24,
     color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: 16,
+    fontWeight: '500',
   },
   addButton: {
     width: 80,
@@ -749,6 +792,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '600',
     color: COLORS.secondary,
+  },
+  headerPlaceholder: {
+    width: 40,
   },
   actionCell: {
     flex: 0,

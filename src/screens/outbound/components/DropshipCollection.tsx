@@ -81,25 +81,31 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
   const fetchDropshipClients = async () => {
     try {
       setLoading(true);
-      const clients = await outboundService.getDropshipClients();
+      console.log('Fetching dropship clients from API...');
       
-      setDropshipClients(clients);
+      // Make API call and properly handle the response structure
+      const response = await outboundService.getDropshipClients();
+      console.log('Dropship clients API response:', response);
       
-      // Extract client names for the picker/list
-      const clientNames = clients.map(client => client.CustomerName);
-      setDropshipClientNames(clientNames);
-      
-      if (clients.length > 0) {
-        setSelectedDropshipClient(clients[0]);
-        setNumberOfParcels(clients[0].StUQty.toString());
-        setNumberOfParcelsDiv(true);
-        setCarrierNameDiv(true);
+      if (response && Array.isArray(response)) {
+        setDropshipClients(response);
+        
+        // Extract client names for the picker/list
+        const clientNames = response.map(client => client.CustomerName);
+        setDropshipClientNames(clientNames);
+        
+        if (response.length > 0) {
+          setSelectedDropshipClient(response[0]);
+          setNumberOfParcels(response[0].StUQty.toString());
+          setNumberOfParcelsDiv(true);
+          setCarrierNameDiv(true);
+        }
       }
       
       setLoading(false);
     } catch (error) {
       console.error('Failed to load dropship clients:', error);
-      Alert.alert('Error', `Failed to load dropship clients: ${error}`);
+      Alert.alert('Error', 'Failed to load dropship clients. Please try again.');
       setLoading(false);
     }
   };

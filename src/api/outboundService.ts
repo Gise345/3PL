@@ -2,6 +2,11 @@
 
 import api from './apiConfig';
 
+export interface DropshipClient {
+    CustomerName: string;
+    StUQty: number;
+  }
+
 export const outboundService = {
   /**
    * Submit outbound loadout data
@@ -34,13 +39,26 @@ export const outboundService = {
   /**
    * Get available dropship clients
    */
-  getDropshipClients: async (): Promise<any[]> => {
+  getDropshipClients: async (): Promise<DropshipClient[]> => {
     try {
+      console.log('Making API request to fetch dropship clients');
+      
+      // Match the exact endpoint used in the Vue implementation
       const response = await api.get('/warehouse/systems/door/check-dropship-orders');
-      return response.data.data || [];
+      console.log('Raw dropship API response:', response);
+      
+      // Handle the response structure correctly
+      if (response.data && response.data.success === 200) {
+        console.log('Successful dropship clients response:', response.data.data);
+        return response.data.data || [];
+      } 
+      
+      console.warn('Unexpected response format from dropship API:', response);
+      return [];
     } catch (error) {
       console.error('Error fetching dropship clients:', error);
-      throw error;
+      // Return empty array instead of throwing
+      return [];
     }
   },
 };

@@ -12,12 +12,14 @@ import {
   Dimensions,
   ScrollView,
   Keyboard,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../utils/theme';
 import { Input } from '../../components/common';
 import { useAppDispatch } from '../../hooks/useRedux';
 import { login } from '../../store/slices/authSlice';
+import { detectWarehouse } from '../../store/slices/settingsSlice';
 import { LoginScreenProps } from '../../navigation/types';
 
 // Get device dimensions for responsive sizing
@@ -120,6 +122,9 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
     setLoading(true);
     try {
       await dispatch(login({ email: fullEmail, password })).unwrap();
+      
+      // Automatically detect warehouse after successful login
+      dispatch(detectWarehouse());
     } catch (error: any) {
       Alert.alert('Login Failed', error?.toString() || 'An error occurred during login');
     } finally {
@@ -209,19 +214,22 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
 
               {/* Password Input */}
               <View style={styles.inputContainer}>
-                <Input
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  secureTextEntry={!showPassword}
-                  containerStyle={styles.input}
-                  inputStyle={styles.inputField}
-                  rightIcon={
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                      <Text style={styles.eyeIcon}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-                    </TouchableOpacity>
-                  }
-                />
+                {/* Custom implementation for password input with toggle */}
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password"
+                    secureTextEntry={!showPassword}
+                    style={styles.passwordInput}
+                  />
+                  <TouchableOpacity 
+                    style={styles.passwordToggle}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Text style={styles.eyeIcon}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Login Button */}
@@ -246,6 +254,9 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
                     type: 'auth/login/fulfilled', 
                     payload: { email: 'test@3p-logistics.co.uk', apiKey: 'test-key' } 
                   });
+                  
+                  // Detect warehouse
+                  dispatch(detectWarehouse());
                 }}
               >
                 <Text style={styles.devButtonText}>Dev Login</Text>
@@ -364,10 +375,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 0,
   },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBackground,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: COLORS.text,
+  },
+  passwordToggle: {
+    padding: 8,
+  },
   eyeIcon: {
     fontSize: 20,
     color: COLORS.textLight,
-    paddingRight: 8,
   },
   loginButton: {
     backgroundColor: COLORS.primary,

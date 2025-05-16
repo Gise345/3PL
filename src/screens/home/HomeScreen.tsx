@@ -15,7 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { logout } from '../../store/slices/authSlice';
-import { setWarehouse } from '../../store/slices/settingsSlice';
+import { setWarehouse, detectWarehouse } from '../../store/slices/settingsSlice';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, shadows, typography, spacing } from '../../utils/theme';
 
@@ -48,7 +48,7 @@ const ModernHomeScreen = () => {
   const navigation = useNavigation();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
-  const { warehouse, isWifiConnected } = useAppSelector((state) => state.settings);
+  const { warehouse, isWifiConnected, ssid } = useAppSelector((state) => state.settings);
   
   // State for expanded sections
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -63,6 +63,19 @@ const ModernHomeScreen = () => {
   const [logoutAnim] = useState(new Animated.Value(1));
   const [titleScale] = useState(new Animated.Value(1));
   const [titleRotate] = useState(new Animated.Value(0));
+  
+  // Setup continuous WiFi detection
+  useEffect(() => {
+    // Initial detection
+    dispatch(detectWarehouse());
+    
+    // Set up interval to check WiFi periodically
+    const interval = setInterval(() => {
+      dispatch(detectWarehouse());
+    }, 30000); // Every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [dispatch]);
   
   // Handle warehouse selection
   const handleWarehouseSelect = (selectedWarehouse: string) => {
@@ -242,8 +255,9 @@ const ModernHomeScreen = () => {
             </View>
           </View>
           
-          {/* Warehouse Selector */}
+          {/* Warehouse Selector - Now more subtle */}
           <View style={styles.warehouseSelector}>
+            <Text style={styles.warehouseSelectorLabel}>Manual Override:</Text>
             {warehouses.map((wh) => (
               <TouchableOpacity
                 key={wh}
@@ -411,8 +425,16 @@ const ModernHomeScreen = () => {
             <Text style={styles.userEmail}>{user?.email || 'User'}</Text>
             <Text style={styles.connectionStatus}>
               {isWifiConnected 
-                ? `🟢 Connected to network` 
+                ? `🟢 Connected to ${ssid || 'Wi-Fi'}` 
                 : `🔴 No network connection`}
+            </Text>
+            <Text style={styles.warehouseStatus}>
+              Current warehouse: <Text style={styles.warehouseValue}>{warehouse}</Text>
+              {isWifiConnected && (
+                <TouchableOpacity onPress={() => dispatch(detectWarehouse())}>
+                  <Text style={styles.refreshText}> 🔄</Text>
+                </TouchableOpacity>
+              )}
             </Text>
           </View>
           
@@ -518,10 +540,16 @@ const styles = StyleSheet.create({
   },
   warehouseSelector: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    borderRadius: 12,
-    padding: 4,
-    marginHorizontal: 5,
+    alignItems: 'center',
+    padding: 8,
+    marginTop: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    borderRadius: 8,
+  },
+  warehouseSelectorLabel: {
+    color: COLORS.textLight,
+    fontSize: 12,
+    marginRight: 10,
   },
   warehouseOption: {
     flex: 1,
@@ -661,6 +689,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textLight,
   },
+  warehouseStatus: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    marginTop: 5,
+  },
+  warehouseValue: {
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  refreshText: {
+    color: COLORS.primary,
+    fontSize: 14,
+  },
   logoutButtonContainer: {
     marginVertical: 10,
     alignItems: 'center',
@@ -686,7 +727,6 @@ const styles = StyleSheet.create({
       },
     }),
   },
-
   logoutIcon: {
     fontSize: 18,
     marginRight: 10,

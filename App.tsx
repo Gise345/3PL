@@ -7,28 +7,57 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
 import { colors } from './src/utils/theme';
 import { ToastProvider } from './src/components/common';
+import { initializeAuthToken } from './src/api/apiConfig';
+import { useAppDispatch } from './src/hooks/useRedux';
+import { checkAuthState } from './src/store/slices/authSlice';
+import NetInfo from '@react-native-community/netinfo';
 
-export default function App() {
-  // Initialize auth token from storage when app starts
+// Internal App component with access to Redux hooks
+const InternalApp = () => {
+  const dispatch = useAppDispatch();
+  
+  // Initialize authentication on app start
   useEffect(() => {
     const setupAuth = async () => {
-      // No need to initialize the token anymore
-      console.log('Authorization header is hardcoded.');
+      // Initialize token from storage
+      await initializeAuthToken();
+      
+      // Check authentication state
+      dispatch(checkAuthState());
+      
+      // Set up network change listener
+      const unsubscribe = NetInfo.addEventListener(state => {
+        // When connection is restored, check auth state again
+        if (state.isConnected) {
+          dispatch(checkAuthState());
+        }
+      });
+      
+      // Clean up network listener on unmount
+      return () => {
+        unsubscribe();
+      };
     };
     
-    
     setupAuth();
-  }, []);
+  }, [dispatch]);
   
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" backgroundColor={colors.primary} />
+      <ToastProvider>
+        <AppNavigator />
+      </ToastProvider>
+    </SafeAreaProvider>
+  );
+};
+
+// Main app component
+export default function App() {
   return (
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>
-        <SafeAreaProvider>
-          <StatusBar style="light" backgroundColor={colors.primary} />
-          <ToastProvider>
-          <AppNavigator />
-        </ToastProvider>
-        </SafeAreaProvider>
+        <InternalApp />
       </PersistGate>
     </Provider>
   );
