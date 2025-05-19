@@ -6,7 +6,7 @@ import { UserInfo } from '../../types/auth0Types';
 interface User {
   email: string;
   name?: string;
-  picture?: string;
+
   apiKey?: string; // For backward compatibility
   sub?: string;
   [key: string]: any; // For other Auth0 user properties
@@ -35,8 +35,6 @@ const mapAuth0User = (auth0User: UserInfo, accessToken: string): User => {
   return {
     email: auth0User.email || '',
     name: auth0User.name,
-    picture: auth0User.picture,
-    sub: auth0User.sub,
     nickname: auth0User.nickname,
     emailVerified: auth0User.email_verified,
     updatedAt: auth0User.updated_at,
@@ -48,16 +46,26 @@ const mapAuth0User = (auth0User: UserInfo, accessToken: string): User => {
 };
 
 // Async thunks for authentication
+// src/store/slices/authSlice.ts modification
 export const login = createAsyncThunk(
   'auth/login',
-  async (_, { rejectWithValue }) => {
+  async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
     try {
-      // Login with Auth0 (browser flow)
-      const { user, credentials } = await auth0Service.login();
+      // Authenticate with Auth0
+      const credentials = await auth0Service.login(email, password);
+      
+      // Get user information
+      const userInfo = await auth0Service.getUserInfo(credentials.accessToken);
       
       return {
         accessToken: credentials.accessToken,
-        user: mapAuth0User(user, credentials.accessToken),
+        user: {
+          email: userInfo.email,
+          name: userInfo.name,
+          sub: userInfo.sub,
+          // For backward compatibility, store the access token as apiKey
+          apiKey: credentials.accessToken,
+        },
       };
     } catch (error: any) {
       return rejectWithValue(

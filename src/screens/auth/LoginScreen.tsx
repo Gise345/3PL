@@ -110,27 +110,29 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
   }, []);
 
   // Handle login
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter both username and password');
-      return;
-    }
+  // Modify the handleLogin function in LoginScreen.tsx
+const handleLogin = async () => {
+  if (!email || !password) {
+    Alert.alert('Error', 'Please enter both username and password');
+    return;
+  }
 
-    // Construct the full email
-    const fullEmail = email + '@3p-logistics.co.uk';
+  // Construct the full email
+  const fullEmail = email.includes('@') ? email : `${email}@3p-logistics.co.uk`;
 
-    setLoading(true);
-    try {
-      await dispatch(login({ email: fullEmail, password })).unwrap();
-      
-      // Automatically detect warehouse after successful login
-      dispatch(detectWarehouse());
-    } catch (error: any) {
-      Alert.alert('Login Failed', error?.toString() || 'An error occurred during login');
-    } finally {
-      setLoading(false);
-    }
-  };
+  setLoading(true);
+  try {
+    // Use auth0 login instead of the direct login
+    await dispatch(login({ email: fullEmail, password })).unwrap();
+    
+    // Automatically detect warehouse after successful login
+    dispatch(detectWarehouse());
+  } catch (error: any) {
+    Alert.alert('Login Failed', error?.toString() || 'An error occurred during login');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <SafeAreaView style={styles.safeArea}>

@@ -23,7 +23,7 @@ export const detectWarehouseFromWifi = async (): Promise<string | null> => {
     if (netInfo.type === 'wifi' && netInfo.details && netInfo.isConnected) {
       const ssid = netInfo.details.ssid;
       
-      console.log('Connected to WiFi network:', ssid);
+      
       
       // Check if this SSID is mapped to a warehouse
       for (const [wifiName, warehouse] of Object.entries(WIFI_MAPPINGS)) {

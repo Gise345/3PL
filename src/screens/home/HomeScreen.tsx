@@ -257,7 +257,6 @@ const ModernHomeScreen = () => {
           
           {/* Warehouse Selector - Now more subtle */}
           <View style={styles.warehouseSelector}>
-            <Text style={styles.warehouseSelectorLabel}>Manual Override:</Text>
             {warehouses.map((wh) => (
               <TouchableOpacity
                 key={wh}

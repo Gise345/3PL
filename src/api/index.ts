@@ -1,5 +1,5 @@
 export * from './apiConfig';
-export * from './authService';
+export * from './auth0Service';
 export * from './inboundService';
 export * from './palletService';
 export * from './warehouseService';
