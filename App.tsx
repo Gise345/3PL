@@ -10,7 +10,13 @@ import { ToastProvider } from './src/components/common';
 import { initializeAuthToken } from './src/api/apiConfig';
 import { useAppDispatch } from './src/hooks/useRedux';
 import { checkAuthState } from './src/store/slices/authSlice';
-import NetInfo from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+
+// Ensure WebBrowser is initialized for Auth0 redirects
+if (Platform.OS !== 'web') {
+  WebBrowser.maybeCompleteAuthSession();
+}
 
 // Internal App component with access to Redux hooks
 const InternalApp = () => {
@@ -19,24 +25,31 @@ const InternalApp = () => {
   // Initialize authentication on app start
   useEffect(() => {
     const setupAuth = async () => {
-      // Initialize token from storage
-      await initializeAuthToken();
-      
-      // Check authentication state
-      dispatch(checkAuthState());
-      
-      // Set up network change listener
-      const unsubscribe = NetInfo.addEventListener(state => {
-        // When connection is restored, check auth state again
-        if (state.isConnected) {
-          dispatch(checkAuthState());
+      try {
+        // Initialize token from storage
+        await initializeAuthToken();
+        
+        // Check authentication state
+        dispatch(checkAuthState());
+        
+        // Set up network change listener for native platforms
+        if (Platform.OS !== 'web') {
+          const NetInfo = require('@react-native-community/netinfo').default;
+          const unsubscribe = NetInfo.addEventListener((state: { isConnected: any; }) => {
+            // When connection is restored, check auth state again
+            if (state.isConnected) {
+              dispatch(checkAuthState());
+            }
+          });
+          
+          // Clean up network listener on unmount
+          return () => {
+            unsubscribe();
+          };
         }
-      });
-      
-      // Clean up network listener on unmount
-      return () => {
-        unsubscribe();
-      };
+      } catch (error) {
+        console.error('Error setting up auth:', error);
+      }
     };
     
     setupAuth();

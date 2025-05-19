@@ -7,20 +7,22 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "com.threepl.doorapp",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.threepl.doorapp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.3p-logistics.3pldoorapp",
+      "package": "com.threepl.doorapp",
       "permissions": [
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.ACCESS_WIFI_STATE",
@@ -37,7 +39,6 @@
       }
     },
     "owner": "giselle345-org",
-    "scheme": "com.3p-logistics.3pldoorapp",
 
     "plugins": [
       [
@@ -57,7 +58,7 @@
       "expo-secure-store",
       [
         "react-native-auth0", {
-        "domain": "your-auth0-domain.auth0.com"
+        "domain": "3p-logistics.eu.auth0.com"
       }]
     ],
     "platforms": [

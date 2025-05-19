@@ -25,7 +25,7 @@ export const useAuth0 = () => {
       // Start Auth0 login
       const credentials = await auth0.webAuth.authorize({
         scope: 'openid profile email',
-        audience: 'https://your-api-identifier',
+        audience: 'https://warehouse-api',
       });
       
       // Set the ID token as our auth token
