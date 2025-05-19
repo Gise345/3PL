@@ -21,6 +21,7 @@ import { useAppDispatch } from '../../hooks/useRedux';
 import { login } from '../../store/slices/authSlice';
 import { detectWarehouse } from '../../store/slices/settingsSlice';
 import { LoginScreenProps } from '../../navigation/types';
+import authService from '../../api/authService';
 
 // Get device dimensions for responsive sizing
 const { width, height } = Dimensions.get('window');
@@ -110,7 +111,7 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
   }, []);
 
   // Handle login
-  // Modify the handleLogin function in LoginScreen.tsx
+  
 const handleLogin = async () => {
   if (!email || !password) {
     Alert.alert('Error', 'Please enter both username and password');
@@ -119,20 +120,33 @@ const handleLogin = async () => {
 
   // Construct the full email
   const fullEmail = email.includes('@') ? email : `${email}@3p-logistics.co.uk`;
-
+  
   setLoading(true);
   try {
-    // Use auth0 login instead of the direct login
-    await dispatch(login({ email: fullEmail, password })).unwrap();
+    console.log('Attempting login with:', { email: fullEmail });
+    
+    // Use Redux login action
+    const result = await dispatch(login({ 
+      email: fullEmail, 
+      password 
+    })).unwrap();
+    
+    console.log('Login successful');
     
     // Automatically detect warehouse after successful login
     dispatch(detectWarehouse());
   } catch (error: any) {
-    Alert.alert('Login Failed', error?.toString() || 'An error occurred during login');
+    console.error('Login error:', error);
+    Alert.alert(
+      'Login Failed', 
+      error?.toString() || 'An error occurred during login. Please check your credentials and try again.'
+    );
   } finally {
     setLoading(false);
   }
 };
+
+
 
   return (
     <SafeAreaView style={styles.safeArea}>

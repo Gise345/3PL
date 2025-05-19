@@ -11,12 +11,8 @@ import { initializeAuthToken } from './src/api/apiConfig';
 import { useAppDispatch } from './src/hooks/useRedux';
 import { checkAuthState } from './src/store/slices/authSlice';
 import { Platform } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 
-// Ensure WebBrowser is initialized for Auth0 redirects
-if (Platform.OS !== 'web') {
-  WebBrowser.maybeCompleteAuthSession();
-}
+
 
 // Internal App component with access to Redux hooks
 const InternalApp = () => {

@@ -108,7 +108,7 @@ const saveUserProfile = async (user: UserInfo): Promise<void> => {
 /**
  * Auth0 service for handling authentication
  */
-export const auth0Service = {
+export const authService = {
   /**
    * Login with Auth0
    */
@@ -283,7 +283,7 @@ export const auth0Service = {
    */
   isAuthenticated: async (): Promise<boolean> => {
     try {
-      const credentials = await auth0Service.getCredentials();
+      const credentials = await authService.getCredentials();
       
       if (!credentials?.accessToken) {
         return false;
@@ -296,7 +296,7 @@ export const auth0Service = {
         // Token is expired, try to refresh if we have a refresh token
         if (credentials.refreshToken) {
           try {
-            await auth0Service.refreshToken(credentials.refreshToken);
+            await authService.refreshToken(credentials.refreshToken);
             return true;
           } catch (refreshError) {
             console.warn('Error refreshing token:', refreshError);
@@ -319,7 +319,7 @@ export const auth0Service = {
   getUserInfo: async (accessToken?: string): Promise<UserInfo | null> => {
     try {
       // First try to get cached user profile
-      const cachedUser = await auth0Service.getUserProfile();
+      const cachedUser = await authService.getUserProfile();
       if (cachedUser) {
         return cachedUser;
       }
@@ -341,7 +341,7 @@ export const auth0Service = {
       // If no token provided, try to get it from stored credentials
       let token = accessToken;
       if (!token) {
-        const credentials = await auth0Service.getCredentials();
+        const credentials = await authService.getCredentials();
         token = credentials?.accessToken;
       }
       
@@ -452,19 +452,19 @@ export const auth0Service = {
   getUserState: async (): Promise<{ user: UserInfo; accessToken: string } | null> => {
     try {
       // Check if we're authenticated
-      const isAuthenticated = await auth0Service.isAuthenticated();
+      const isAuthenticated = await authService.isAuthenticated();
       
       if (!isAuthenticated) {
         return null;
       }
       
       // Get user profile and credentials
-      const credentials = await auth0Service.getCredentials();
-      let user = await auth0Service.getUserProfile();
+      const credentials = await authService.getCredentials();
+      let user = await authService.getUserProfile();
       
       // If we have credentials but no user profile, try to get it
       if (credentials?.accessToken && !user) {
-        user = await auth0Service.getUserInfo(credentials.accessToken);
+        user = await authService.getUserInfo(credentials.accessToken);
       }
       
       if (!user || !credentials?.accessToken) {
@@ -482,4 +482,4 @@ export const auth0Service = {
   },
 };
 
-export default auth0Service;
+export default authService;

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Base URLs based on environment
@@ -23,43 +22,28 @@ const api = axios.create({
   },
 });
 
-// Function to update auth token
-export const setAuthToken = async (token: string | null) => {
+// Set auth token for API calls
+export const setAuthToken = async (token: string | null): Promise<void> => {
   if (token) {
-    api.defaults.headers.common['Authorization'] = `Basic ${token}`;
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     await AsyncStorage.setItem('auth_token', token);
   } else {
-    // Revert to default Authorization if token is removed
+    // Revert to default Basic Auth when logged out
     api.defaults.headers.common['Authorization'] = 'Basic d2FyZWhvdXNlQWRtaW46M1BMJldIRChBUEkp';
     await AsyncStorage.removeItem('auth_token');
   }
 };
 
-// Initialize token from storage
-export const initializeAuthToken = async () => {
-  const token = await AsyncStorage.getItem('auth_token');
-  if (token) {
-    setAuthToken(token);
+// Initialize token from storage on app startup
+export const initializeAuthToken = async (): Promise<void> => {
+  try {
+    const token = await AsyncStorage.getItem('auth_token');
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  } catch (error) {
+    console.error('Error initializing auth token:', error);
   }
 };
-
-// Error handling and request/response interceptors
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const { response } = error;
-    
-    // Handle 401 Unauthorized errors
-    if (response && response.status === 401) {
-      // Clear token if unauthorized
-      await setAuthToken(null);
-      // Can add redirect to login logic here
-      await AsyncStorage.setItem('auth_state_changed', 'true');
-
-    }
-    
-    return Promise.reject(error);
-  }
-);
 
 export default api;

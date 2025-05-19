@@ -47,9 +47,8 @@ interface MenuOptionProps {
 const ModernHomeScreen = () => {
   const navigation = useNavigation();
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector((state) => state.auth);
-  const { warehouse, isWifiConnected, ssid } = useAppSelector((state) => state.settings);
-  
+  const { user } = useAppSelector((state) => state.auth) || { user: null };
+  const { warehouse, isWifiConnected, ssid } = useAppSelector((state) => state.settings) || { warehouse: 'TFH', isWifiConnected: false, ssid: '' };  
   // State for expanded sections
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   

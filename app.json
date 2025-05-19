@@ -54,11 +54,7 @@
         }
       ],
       "expo-font",
-      "expo-secure-store",
-      [
-        "react-native-auth0", {
-        "domain": "3p-logistics.eu.auth0.com"
-      }]
+      "expo-secure-store"
     ],
     "platforms": [
       "android",
