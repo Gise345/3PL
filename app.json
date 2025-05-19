@@ -54,7 +54,6 @@
         }
       ],
       "expo-font",
-      "react-native-auth0",
       "expo-secure-store",
       [
         "react-native-auth0", {

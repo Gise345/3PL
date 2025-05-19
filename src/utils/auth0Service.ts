@@ -1,35 +1,22 @@
-import Auth0, { Credentials, UserInfo } from 'react-native-auth0';
+import Auth0 from 'react-native-auth0';
 import * as SecureStore from 'expo-secure-store';
-import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { 
-  auth0Config, 
+  AUTH0_DOMAIN, 
+  AUTH0_CLIENT_ID,
+  AUTH0_CALLBACK_URL,
   DEFAULT_SCOPES,
   REFRESH_TOKEN_SCOPES,
-  REDIRECT_URI
+  auth0Config,
 } from './auth0';
+import { UserInfo, Auth0Credentials } from '../types/auth0Types';
 import { setAuthToken } from '../api/apiConfig';
 
-// Register the redirect URI for web browser (only on native platforms)
-if (Platform.OS !== 'web') {
-  try {
-    WebBrowser.maybeCompleteAuthSession();
-  } catch (error) {
-    console.warn('Failed to initialize WebBrowser:', error);
-  }
-}
-
 // Create Auth0 client instance
-let auth0: Auth0;
-try {
-  auth0 = new Auth0({
-    domain: auth0Config.domain,
-    clientId: auth0Config.clientId,
-  });
-} catch (error) {
-  console.error('Failed to initialize Auth0 SDK:', error);
-  // We'll create a fallback implementation later
-}
+const auth0 = new Auth0({
+  domain: AUTH0_DOMAIN,
+  clientId: AUTH0_CLIENT_ID,
+});
 
 // Keys for storing auth state
 const AUTH_KEYS = {
@@ -37,92 +24,51 @@ const AUTH_KEYS = {
   USER_PROFILE: '3pl_auth_user_profile',
 };
 
-// Default timeout for API calls (15 seconds)
-const API_TIMEOUT = 15000;
-
 /**
- * Helper function to generate a mock token for development
+ * Generate a mock token for development and testing
  */
 const generateMockToken = (payload: any): string => {
-  // Create the three parts of a JWT
   const header = { alg: 'HS256', typ: 'JWT' };
   
-  // Use a safe version of btoa that works in all environments
+  // Base64 encode a string in a way that works in all environments
   const safeBase64Encode = (str: string): string => {
-    try {
-      // First try native btoa
-      return btoa(str)
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-    } catch (e) {
-      // Fallback for environments where btoa might not be available
-      // Create a base64 string without external dependencies
-      const base64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-      let result = '';
+    let output = '';
+    const enc = new TextEncoder();
+    const bytes = enc.encode(str);
+    const len = bytes.length;
+    let c1, c2, c3;
+    
+    const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    
+    for (let i = 0; i < len; i += 3) {
+      c1 = bytes[i] & 0xff;
+      c2 = i + 1 < len ? bytes[i + 1] & 0xff : 0;
+      c3 = i + 2 < len ? bytes[i + 2] & 0xff : 0;
       
-      // Convert string to UTF-8 array
-      const utf8 = [];
-      for (let i = 0; i < str.length; i++) {
-        let charcode = str.charCodeAt(i);
-        if (charcode < 0x80) utf8.push(charcode);
-        else if (charcode < 0x800) {
-          utf8.push(0xc0 | (charcode >> 6), 
-                    0x80 | (charcode & 0x3f));
-        }
-        else if (charcode < 0xd800 || charcode >= 0xe000) {
-          utf8.push(0xe0 | (charcode >> 12), 
-                    0x80 | ((charcode>>6) & 0x3f), 
-                    0x80 | (charcode & 0x3f));
-        }
-        // surrogate pair
-        else {
-          i++;
-          charcode = ((charcode & 0x3ff)<<10) | (str.charCodeAt(i) & 0x3ff);
-          utf8.push(0xf0 | (charcode >>18), 
-                    0x80 | ((charcode>>12) & 0x3f), 
-                    0x80 | ((charcode>>6) & 0x3f), 
-                    0x80 | (charcode & 0x3f));
-        }
-      }
-      
-      // Convert UTF-8 array to base64
-      let i = 0;
-      const bytes = utf8;
-      
-      while (i < bytes.length) {
-        const a = i < bytes.length ? bytes[i++] : 0;
-        const b = i < bytes.length ? bytes[i++] : 0;
-        const c = i < bytes.length ? bytes[i++] : 0;
-        
-        const triplet = (a << 16) | (b << 8) | c;
-        
-        result += base64chars[(triplet >> 18) & 0x3F];
-        result += base64chars[(triplet >> 12) & 0x3F];
-        result += i > bytes.length + 1 ? '=' : base64chars[(triplet >> 6) & 0x3F];
-        result += i > bytes.length ? '=' : base64chars[triplet & 0x3F];
-      }
-      
-      // Make it URL safe
-      return result
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+      output += base64Chars.charAt(c1 >> 2);
+      output += base64Chars.charAt(((c1 & 3) << 4) | (c2 >> 4));
+      output += i + 1 < len ? base64Chars.charAt(((c2 & 15) << 2) | (c3 >> 6)) : '=';
+      output += i + 2 < len ? base64Chars.charAt(c3 & 63) : '=';
     }
+    
+    // Make URL safe
+    return output
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
   };
   
   const headerString = safeBase64Encode(JSON.stringify(header));
   const payloadString = safeBase64Encode(JSON.stringify(payload));
   const signature = 'MOCK_SIGNATURE_FOR_DEVELOPMENT';
   
-  // Combine the parts with periods
   return `${headerString}.${payloadString}.${signature}`;
 };
 
 /**
  * Helper function to save credentials securely
  */
-const saveCredentials = async (credentials: Credentials): Promise<void> => {
+const saveCredentials = async (credentials: Auth0Credentials): Promise<void> => {
   try {
     const credentialsString = JSON.stringify(credentials);
     
@@ -160,26 +106,13 @@ const saveUserProfile = async (user: UserInfo): Promise<void> => {
 };
 
 /**
- * Helper function to get platform-specific redirect URI
- */
-const getRedirectUri = (): string => {
-  if (Platform.OS === 'ios') {
-    return REDIRECT_URI.IOS;
-  } else if (Platform.OS === 'android') {
-    return REDIRECT_URI.ANDROID;
-  } else {
-    return REDIRECT_URI.WEB;
-  }
-};
-
-/**
  * Auth0 service for handling authentication
  */
 export const auth0Service = {
   /**
-   * Login with Auth0 browser flow (recommended approach)
+   * Login with Auth0
    */
-  login: async (): Promise<{ user: UserInfo; credentials: Credentials }> => {
+  login: async (): Promise<{ user: UserInfo; credentials: Auth0Credentials }> => {
     try {
       // For web platform in development, use mock implementation
       if (__DEV__ && Platform.OS === 'web') {
@@ -198,7 +131,7 @@ export const auth0Service = {
         
         // Create mock credentials
         const expireTime = Math.floor(Date.now() / 1000) + 86400; // 24 hours
-        const mockCredentials: Credentials = {
+        const mockCredentials: Auth0Credentials = {
           accessToken: generateMockToken({
             sub: mockUser.sub,
             email: mockUser.email,
@@ -210,7 +143,7 @@ export const auth0Service = {
             email: mockUser.email,
             name: mockUser.name,
             exp: expireTime,
-            aud: auth0Config.clientId,
+            aud: AUTH0_CLIENT_ID,
           }),
           expiresIn: 86400,
           tokenType: 'Bearer',
@@ -230,14 +163,17 @@ export const auth0Service = {
       }
       
       // Use Auth0 SDK for native platforms
-      const redirectUri = getRedirectUri();
-      console.log(`Logging in with redirect URI: ${redirectUri}`);
+      const redirectUrl = Platform.OS === 'ios' 
+        ? AUTH0_CALLBACK_URL.IOS 
+        : AUTH0_CALLBACK_URL.ANDROID;
+      
+      console.log(`Logging in with redirect URI: ${redirectUrl}`);
       
       // Use Auth0's authorize method (this opens the Auth0 login page in a browser)
       const credentials = await auth0.webAuth.authorize({
         scope: REFRESH_TOKEN_SCOPES, // Include offline_access for refresh tokens
         audience: auth0Config.audience,
-        redirectUrl: redirectUri,
+        redirectUrl,
       });
       
       console.log('Auth0 login successful, getting user profile');
@@ -246,13 +182,21 @@ export const auth0Service = {
       const user = await auth0.auth.userInfo({ token: credentials.accessToken });
       
       // Save credentials and user profile
-      await saveCredentials(credentials);
-      await saveUserProfile(user);
+      await saveCredentials({
+        accessToken: credentials.accessToken,
+        idToken: credentials.idToken,
+        refreshToken: credentials.refreshToken,
+        expiresIn: credentials.expiresIn,
+        expiresAt: credentials.expiresAt,
+        tokenType: credentials.tokenType,
+        scope: credentials.scope,
+      });
+      await saveUserProfile(user as UserInfo);
       
       // Set the access token for API calls
       await setAuthToken(credentials.accessToken);
       
-      return { user, credentials };
+      return { user: user as UserInfo, credentials: credentials as Auth0Credentials };
     } catch (error) {
       console.error('Auth0 login error:', error);
       throw error;
@@ -274,7 +218,7 @@ export const auth0Service = {
       
       // For native platforms, use Auth0 SDK to clear session
       try {
-        await auth0.webAuth.clearSession({ federated: true });
+        await auth0.webAuth.clearSession();
       } catch (clearError) {
         console.warn('Error clearing Auth0 session:', clearError);
         // Continue with local logout even if server logout fails
@@ -295,7 +239,7 @@ export const auth0Service = {
   /**
    * Get stored credentials
    */
-  getCredentials: async (): Promise<Credentials | null> => {
+  getCredentials: async (): Promise<Auth0Credentials | null> => {
     try {
       // Platform-specific storage
       let credentialsString: string | null = null;
@@ -409,9 +353,9 @@ export const auth0Service = {
       const user = await auth0.auth.userInfo({ token });
       
       // Cache the user profile
-      await saveUserProfile(user);
+      await saveUserProfile(user as UserInfo);
       
-      return user;
+      return user as UserInfo;
     } catch (error) {
       console.error('Error getting user info:', error);
       
@@ -425,7 +369,7 @@ export const auth0Service = {
           picture: 'https://ui-avatars.com/api/?name=Fallback+User',
           updated_at: new Date().toISOString(),
           email_verified: true,
-        } as UserInfo;
+        };
       }
       
       return null;
@@ -435,14 +379,14 @@ export const auth0Service = {
   /**
    * Refresh the access token
    */
-  refreshToken: async (refreshToken: string): Promise<Credentials> => {
+  refreshToken: async (refreshToken: string): Promise<Auth0Credentials> => {
     try {
       // For web development, return mock credentials
       if (__DEV__ && Platform.OS === 'web') {
         console.log('Using mock implementation for token refresh');
         
         const expireTime = Math.floor(Date.now() / 1000) + 86400; // 24 hours
-        const mockCredentials: Credentials = {
+        const mockCredentials: Auth0Credentials = {
           accessToken: generateMockToken({
             sub: 'auth0|123456789',
             email: 'refreshed@3p-logistics.co.uk',
@@ -454,7 +398,7 @@ export const auth0Service = {
             email: 'refreshed@3p-logistics.co.uk',
             name: 'Refreshed User',
             exp: expireTime,
-            aud: auth0Config.clientId,
+            aud: AUTH0_CLIENT_ID,
           }),
           expiresIn: 86400,
           tokenType: 'Bearer',
@@ -478,13 +422,23 @@ export const auth0Service = {
         scope: DEFAULT_SCOPES, // Usually don't need offline_access when refreshing
       });
       
+      const auth0Credentials: Auth0Credentials = {
+        accessToken: credentials.accessToken,
+        idToken: credentials.idToken,
+        refreshToken: credentials.refreshToken || refreshToken, // Keep original if not returned
+        expiresIn: credentials.expiresIn,
+        expiresAt: credentials.expiresAt,
+        tokenType: credentials.tokenType,
+        scope: credentials.scope,
+      };
+      
       // Save refreshed credentials
-      await saveCredentials(credentials);
+      await saveCredentials(auth0Credentials);
       
       // Update API token
-      await setAuthToken(credentials.accessToken);
+      await setAuthToken(auth0Credentials.accessToken);
       
-      return credentials;
+      return auth0Credentials;
     } catch (error) {
       console.error('Error refreshing token:', error);
       throw error;
