@@ -19,7 +19,6 @@ import { colors } from '../../utils/theme';
 import { Input } from '../../components/common';
 import { useAppDispatch } from '../../hooks/useRedux';
 import { login } from '../../store/slices/authSlice';
-import { detectWarehouse } from '../../store/slices/settingsSlice';
 import { LoginScreenProps } from '../../navigation/types';
 import authService from '../../api/authService';
 
@@ -112,6 +111,7 @@ const SeamlessLoginScreen: React.FC<LoginScreenProps> = () => {
 
   // Handle login
   
+// The handleLogin function is incomplete - missing closing brace and catch/finally blocks
 const handleLogin = async () => {
   if (!email || !password) {
     Alert.alert('Error', 'Please enter both username and password');
@@ -132,9 +132,6 @@ const handleLogin = async () => {
     })).unwrap();
     
     console.log('Login successful');
-    
-    // Automatically detect warehouse after successful login
-    dispatch(detectWarehouse());
   } catch (error: any) {
     console.error('Login error:', error);
     Alert.alert(
@@ -271,8 +268,7 @@ const handleLogin = async () => {
                     payload: { email: 'test@3p-logistics.co.uk', apiKey: 'test-key' } 
                   });
                   
-                  // Detect warehouse
-                  dispatch(detectWarehouse());
+                 
                 }}
               >
                 <Text style={styles.devButtonText}>Dev Login</Text>

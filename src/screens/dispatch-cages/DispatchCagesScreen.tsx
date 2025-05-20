@@ -16,7 +16,9 @@ Platform,
 Dimensions,
 SafeAreaView,
 Modal,
-Keyboard
+Keyboard,
+NativeEventSubscription,
+BackHandler 
 } from 'react-native';
 import { DispatchCagesScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
@@ -28,6 +30,7 @@ import { useCamera } from '../../hooks/useCamera';
 import { Audio } from 'expo-av';
 import { cageService } from '../../api/cageService';
 import { BarcodeScannerModal } from '../../components/common/barcode';
+import { colors } from '../../utils/theme';
 
 
 // Define modern color palette with teal primary color to match other screens
@@ -138,6 +141,14 @@ const [titleScale] = useState(new Animated.Value(0.95));
 // Set up barcode scanning state from hooks
 const [showScanner, setShowScanner] = useState(false);
 const [scannedData, setScannedData] = useState<string | null>(null);
+const [barcodeBuffer, setBarcodeBuffer] = useState<string>('');
+const [lastKeyTime, setLastKeyTime] = useState<number>(0);
+const [isScanning, setIsScanning] = useState(false);
+const timeoutRef = useRef<number | null>(null);
+const invisibleInputRef = useRef<TextInput>(null);
+const scanTimeoutDuration = 50; // ms between keystrokes for external scanner
+
+
 
 // Camera functionality
 const { 
@@ -202,6 +213,146 @@ useFocusEffect(
   }, [])
 );
 
+// this useFocusEffect for maintaining focus on the invisible input
+useFocusEffect(
+  useCallback(() => {
+    if (pickedCarrier && !dispatchProcess && invisibleInputRef.current) {
+      // Focus invisible input when screen comes into focus
+      setTimeout(() => {
+        if (invisibleInputRef.current) {
+          invisibleInputRef.current.focus();
+          Keyboard.dismiss();
+        }
+      }, 300);
+    }
+    
+    return () => {
+      // Cleanup on unfocus
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [pickedCarrier, dispatchProcess])
+);
+
+// This useEffect to hide keyboard when screen loads
+useEffect(() => {
+  Keyboard.dismiss();
+}, []);
+
+// Update the handleKeyPress function to prevent navigation
+const handleKeyPress = (e: any) => {
+  // First prevent any default behavior
+  if (e.preventDefault) {
+    e.preventDefault();
+  }
+  if (e.stopPropagation) {
+    e.stopPropagation();
+  }
+  
+  const currentTime = new Date().getTime();
+  
+  // Show scanning indicator
+  setIsScanning(true);
+  
+  // Explicitly handle Enter and Escape keys that might trigger navigation
+  if (e.nativeEvent.key === 'Enter' || e.nativeEvent.key === 'Escape') {
+    // Just complete the current scan instead of navigating
+    if (barcodeBuffer && barcodeBuffer.length > 0) {
+      processScanBuffer(barcodeBuffer);
+    }
+    setBarcodeBuffer('');
+    setIsScanning(false);
+    return;
+  }
+  
+  // Ignore certain keys that shouldn't be part of barcode
+  if (e.nativeEvent.key === 'Backspace' || e.nativeEvent.key === 'Tab') {
+    return;
+  }
+  
+  // If this is a new scan sequence or continuing a scan
+  if (currentTime - lastKeyTime < scanTimeoutDuration || barcodeBuffer === '') {
+    // Append character to buffer
+    setBarcodeBuffer(prev => prev + e.nativeEvent.key);
+    setLastKeyTime(currentTime);
+    
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    // Set timeout to process the complete barcode
+    timeoutRef.current = setTimeout(() => {
+      if (barcodeBuffer && barcodeBuffer.length > 0) {
+        processScanBuffer(barcodeBuffer + e.nativeEvent.key);
+      }
+    }, scanTimeoutDuration + 20);
+  } else {
+    // Start a new buffer
+    setBarcodeBuffer(e.nativeEvent.key);
+    setLastKeyTime(currentTime);
+  }
+};
+
+// Add this helper function to process the scan buffer
+const processScanBuffer = (barcode: string) => {
+  console.log('Processing scanned barcode:', barcode);
+  
+  // Only process barcode if we're on the cage scanning page
+  if (pickedCarrier && !dispatchProcess) {
+    // First update the visible field so user sees what was scanned
+    setCageIdField(barcode);
+    
+    // Then process the scan with a little delay to allow UI to update
+    setTimeout(() => {
+      // Check if the barcode is a valid cage
+      if (!openCages.includes(barcode)) {
+        if (cagesToDispatch.includes(barcode)) {
+          console.log("Cage already scanned:", barcode);
+          playErrorSound();
+          Alert.alert('Error', 'Cage has already been scanned');
+        } else {
+          console.log("Cage not found:", barcode);
+          playErrorSound();
+          Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
+        }
+      } else {
+        // Valid cage - move from openCages to cagesToDispatch
+        console.log("Valid cage found, moving to dispatch list:", barcode);
+        
+        // Update state by removing from open cages and adding to dispatch cages
+        setOpenCages(prev => prev.filter(id => id !== barcode));
+        setCagesToDispatch(prev => [...prev, barcode]);
+        
+        playSuccessSound();
+      }
+      
+      // Clear the input field
+      setCageIdField('');
+    }, 100);
+  }
+  
+  setBarcodeBuffer('');
+  setIsScanning(false); // Hide scanning indicator
+};
+
+// Add this useEffect to prevent unintended navigation 
+useEffect(() => {
+  // Prevent back button or other navigation events when scanning is active
+  const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+    // If we're actively scanning, prevent navigation
+    if (isScanning) {
+      return true; // Prevents default back behavior
+    }
+    
+    // Otherwise allow normal back behavior
+    return false;
+  });
+  
+  return () => backHandler.remove();
+}, [isScanning]);
+
 // Set up animations on component mount
 useEffect(() => {
   // Animate components on mount
@@ -224,6 +375,43 @@ useEffect(() => {
     })
   ]).start();
 }, []);
+
+// Set up keyboard listeners for external scanner - replace existing useEffect entirely
+useEffect(() => {
+  // Only need keyboard listeners when we are in the cage scanning phase
+  let keyboardListener: NativeEventSubscription | null = null;
+  
+  // Hide keyboard initially
+  Keyboard.dismiss();
+  
+  if (pickedCarrier && !dispatchProcess) {
+    // Focus invisible input to capture external scanner input
+    setTimeout(() => {
+      if (invisibleInputRef.current && !showScanner) {
+        // Set focus to invisible input without showing keyboard
+        invisibleInputRef.current.focus();
+        Keyboard.dismiss();
+      }
+    }, 300);
+    
+    // Set up a listener to refocus the invisible input when keyboard hides
+    keyboardListener = Keyboard.addListener('keyboardDidHide', () => {
+      if (invisibleInputRef.current && !showScanner) {
+        invisibleInputRef.current.focus();
+      }
+    });
+  }
+  
+  // Cleanup listeners when component unmounts or dependencies change
+  return () => {
+    if (keyboardListener) {
+      keyboardListener.remove();
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+  };
+}, [pickedCarrier, dispatchProcess, showScanner]);
 
 
 // Load sound effects
@@ -621,6 +809,15 @@ const renderCageScanning = () => (
         autoCapitalize="characters"
         blurOnSubmit={false}
         selectTextOnFocus={true}
+        showSoftInputOnFocus={false}
+        onFocus={() => {
+          // Only show keyboard when user explicitly taps on field
+          setTimeout(() => {
+            if (cageIdInputRef.current) {
+              cageIdInputRef.current.setNativeProps({ showSoftInputOnFocus: true });
+            }
+          }, 50);
+        }}
       />
         <TouchableOpacity 
           style={styles.scanButton}
@@ -634,33 +831,32 @@ const renderCageScanning = () => (
     {/* Cage lists container with auto-height based on content */}
     <View style={styles.cagesContainer}>
       {/* Open Cages section */}
-      // Render items with ScrollView for many items
-<View style={styles.cageListContainer}>
-  <Text style={styles.cageListTitle}>
-    Open Cages: <Text style={styles.cageCount}>{openCages.length}</Text>
-  </Text>
-  
-  {/* ScrollView with max height for many items */}
-  <ScrollView 
-    style={[
-      styles.cageItemsScrollView, 
-      openCages.length > 5 && styles.cageItemsScrollViewTall
-    ]}
-    nestedScrollEnabled={true}
-  >
-    <View style={styles.cageItemsContainer}>
-      {openCages.length > 0 ? (
-        openCages.map((item) => (
-          <View key={`open-${item}`} style={styles.cageItem}>
-            <Text style={styles.cageId}>{item}</Text>
+      <View style={styles.cageListContainer}>
+        <Text style={styles.cageListTitle}>
+          Open Cages: <Text style={styles.cageCount}>{openCages.length}</Text>
+        </Text>
+        
+        {/* ScrollView with max height for many items */}
+        <ScrollView 
+          style={[
+            styles.cageItemsScrollView, 
+            openCages.length > 5 && styles.cageItemsScrollViewTall
+          ]}
+          nestedScrollEnabled={true}
+        >
+          <View style={styles.cageItemsContainer}>
+            {openCages.length > 0 ? (
+              openCages.map((item) => (
+                <View key={`open-${item}`} style={styles.cageItem}>
+                  <Text style={styles.cageId}>{item}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.noCagesText}>No open cages remaining</Text>
+            )}
           </View>
-        ))
-      ) : (
-        <Text style={styles.noCagesText}>No open cages remaining</Text>
-      )}
-    </View>
-  </ScrollView>
-</View>
+        </ScrollView>
+      </View>
       
       {/* Scanned Cages section */}
       <View style={styles.cageListContainer}>
@@ -782,870 +978,917 @@ const renderDispatchProcess = () => (
                   setShowSignaturePad(true);
                 } else {
                   Alert.alert(
-                    'Registration Required',
-                    'Please enter a valid registration number first'
-                  );
-                }
-              }}
-            >
-              <MaterialIcons name="gesture" size={36} color={COLORS.border} />
-              <Text style={styles.photoPlaceholderText}>
-                {driverReg && driverReg.length >= 3 ? 'Tap to capture' : 'Complete registration first'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-    </View>
-    
-    {/* Registration input section - separate from summary */}
-    {showRegistrationInput && (
-      <View style={styles.inputSection}>
-        <Text style={styles.inputLabel}>Vehicle Registration Number</Text>
-        <View style={styles.registrationInputContainer}>
-          <TextInput
-            style={styles.registrationFieldInput}
-            value={driverReg}
-            onChangeText={handleRegistrationInput}
-            placeholder="Enter registration"
-            placeholderTextColor={COLORS.textLight}
-            autoCapitalize="characters"
-            blurOnSubmit={false}
-            selectTextOnFocus={true}
-          />
-          <TouchableOpacity 
-            style={[
-              styles.confirmButton,
-              driverReg.length < 3 && styles.disabledButton
-            ]}
-            onPress={handleConfirmDriverReg}
-            disabled={driverReg.length < 3}
-          >
-            <Text style={styles.confirmButtonText}>Confirm</Text>
-          </TouchableOpacity>
-        </View>
-        {driverReg && driverReg.length < 3 && (
-          <Text style={styles.validationText}>Registration must be at least 3 characters</Text>
-        )}
-      </View>
-    )}
-    
-    {/* Submit button - enabled when all required fields are present */}
-    {(parcelPhoto && driverReg && driverReg.length >= 3 && signatureImage) ? (
-      <Button
-        title="Submit Dispatch"
-        onPress={handleSubmitDispatch}
-        style={styles.submitButton}
-        loading={submitting}
-        disabled={submitting}
-      />
-    ) : (
-      <Text style={styles.instructionText}>
-        {!parcelPhoto ? '• Please capture a truck photo\n' : ''}
-        {!driverReg || driverReg.length < 3 ? '• Please enter a valid registration number\n' : ''}
-        {!signatureImage ? '• Please capture driver signature' : ''}
-      </Text>
-    )}
-  </View>
+                   'Registration Required',
+                   'Please enter a valid registration number first'
+                 );
+               }
+             }}
+           >
+             <MaterialIcons name="gesture" size={36} color={COLORS.border} />
+             <Text style={styles.photoPlaceholderText}>
+               {driverReg && driverReg.length >= 3 ? 'Tap to capture' : 'Complete registration first'}
+             </Text>
+           </TouchableOpacity>
+         )}
+       </View>
+     </View>
+   </View>
+   
+   {/* Registration input section - separate from summary */}
+   {showRegistrationInput && (
+     <View style={styles.inputSection}>
+       <Text style={styles.inputLabel}>Vehicle Registration Number</Text>
+       <View style={styles.registrationInputContainer}>
+         <TextInput
+           style={styles.registrationFieldInput}
+           value={driverReg}
+           onChangeText={handleRegistrationInput}
+           placeholder="Enter registration"
+           placeholderTextColor={COLORS.textLight}
+           autoCapitalize="characters"
+           blurOnSubmit={false}
+           selectTextOnFocus={true}
+         />
+         <TouchableOpacity 
+           style={[
+             styles.confirmButton,
+             driverReg.length < 3 && styles.disabledButton
+           ]}
+           onPress={handleConfirmDriverReg}
+           disabled={driverReg.length < 3}
+         >
+           <Text style={styles.confirmButtonText}>Confirm</Text>
+         </TouchableOpacity>
+       </View>
+       {driverReg && driverReg.length < 3 && (
+         <Text style={styles.validationText}>Registration must be at least 3 characters</Text>
+       )}
+     </View>
+   )}
+   
+   {/* Submit button - enabled when all required fields are present */}
+   {(parcelPhoto && driverReg && driverReg.length >= 3 && signatureImage) ? (
+     <Button
+       title="Submit Dispatch"
+       onPress={handleSubmitDispatch}
+       style={styles.submitButton}
+       loading={submitting}
+       disabled={submitting}
+     />
+   ) : (
+     <Text style={styles.instructionText}>
+       {!parcelPhoto ? '• Please capture a truck photo\n' : ''}
+       {!driverReg || driverReg.length < 3 ? '• Please enter a valid registration number\n' : ''}
+       {!signatureImage ? '• Please capture driver signature' : ''}
+     </Text>
+   )}
+ </View>
 );
 
 // Open barcode scanner
 const openScanner = () => {
-  setShowScanner(true);
+ setShowScanner(true);
 };
 
 
 return (
-  <SafeAreaView style={styles.safeArea}>
-    <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
-    
-    {/* Header */}
-    <View style={styles.header}>
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => navigation.goBack()}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.backButtonText}>←</Text>
-      </TouchableOpacity>
-      
-      <Animated.Text 
-        style={[
-          styles.headerTitle,
-          { transform: [{ scale: titleScale }] }
-        ]}
-      >
-        <Text style={styles.headerTitleText}>Dispatch Cages </Text>
-        <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
-      </Animated.Text>
-      
-      <View style={styles.headerPlaceholder} />
-    </View>
-    
-    {/* Main content - use conditional rendering instead of ScrollView */}
-    <View style={styles.mainContainer}>
-      <Animated.View 
-        style={{ 
-          opacity: fadeIn,
-          transform: [{ translateY: slideUp }],
-          flex: 1,
-        }}
-      >
-        {!pickedCarrier && renderCarrierSelection()}
-        {pickedCarrier && !dispatchProcess && renderCageScanning()}
-        {pickedCarrier && dispatchProcess && renderDispatchProcess()}
-      </Animated.View>
-    </View>
-
-        {/* Camera Modal */}
-        <CameraModal
-          visible={showCamera}
-          onClose={closeCamera}
-          onImageCaptured={handleImageCaptured}
-          category={categoryName || 'Truck'} // Provide default value
-          type={cameraType || 'transit'} // Provide default value
-          companyCode="OUT"
-          referenceNumber={pickedCarrier || ''}
-    />
-    
-    {/* Signature Pad Modal */}
-    <Modal
-      visible={showSignaturePad}
-      transparent={true}
-      animationType="slide"
-    >
-      <View style={styles.signatureModalContainer}>
-        <View style={styles.signatureModalContent}>
-          <View style={styles.signatureModalHeader}>
-            <Text style={styles.signatureModalTitle}>Driver Signature</Text>
-            <TouchableOpacity 
-              style={styles.signatureCloseButton}
-              onPress={() => setShowSignaturePad(false)}
-            >
-              <MaterialIcons name="close" size={24} color={COLORS.text} />
-            </TouchableOpacity>
+ <SafeAreaView style={styles.safeArea}>
+   <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+   
+  
+    {pickedCarrier && !dispatchProcess && (
+      <>
+        <TextInput
+          ref={invisibleInputRef}
+          style={{ position: 'absolute', opacity: 0, height: 0, width: 0 }}
+          autoFocus={true}
+          onKeyPress={handleKeyPress}
+          blurOnSubmit={false}
+          caretHidden={true}
+          showSoftInputOnFocus={false}
+          onBlur={() => {
+            // Refocus when input loses focus
+            setTimeout(() => {
+              if (invisibleInputRef.current && !showScanner) {
+                invisibleInputRef.current.focus();
+                Keyboard.dismiss();
+              }
+            }, 50);
+          }}
+        />
+        
+        {/* External scanner indicator */}
+        {isScanning && (
+          <View style={styles.scanningIndicator}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.scanningText}>Reading external scanner...</Text>
           </View>
-          
-          <SignaturePad
-            onSignatureCapture={handleSignatureCaptured}
-            companyCode="OUT"
-            carrierName={pickedCarrier || ''}
-          />
-        </View>
-      </View>
-    </Modal>
-
-    {/* Barcode Scanner Modal */}
-    <BarcodeScannerModal
-  visible={showScanner}
-  onClose={() => setShowScanner(false)}
-  onBarcodeScanned={(barcode) => {
-    // First close the scanner
-    setShowScanner(false);
-    
-    // Set the cage ID field
-    setCageIdField(barcode);
-    
-    // Process the scanned cage with a small delay to ensure state updates properly
-    setTimeout(() => {
-      if (barcode) {
-        // Check if the barcode is a valid cage
-        if (!openCages.includes(barcode)) {
-          if (cagesToDispatch.includes(barcode)) {
-            playErrorSound();
-            Alert.alert('Error', 'Cage has already been scanned');
-          } else {
-            playErrorSound();
-            Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
-          }
-        } else {
-          // Create new arrays instead of mutating state directly
-          const newOpenCages = [...openCages].filter(id => id !== barcode);
-          const newCagesToDispatch = [...cagesToDispatch, barcode];
-          
-          // Update state with new arrays
-          setOpenCages(newOpenCages);
-          setCagesToDispatch(newCagesToDispatch);
-          playSuccessSound();
-        }
-        // Reset the input field
-        setCageIdField('');
-      }
-    }, 300);
-  }}
-  title="Scan Cage ID"
-/>
-    
-    {/* Loading Overlay */}
-    {(loading || submitting) && (
-      <View style={styles.loadingOverlay}>
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingOverlayText}>
-            {submitting ? 'Submitting dispatch...' : 'Loading...'}
-          </Text>
-        </View>
-      </View>
+        )}
+      </>
     )}
-  </SafeAreaView>
+
+   {/* Header */}
+   <View style={styles.header}>
+     <TouchableOpacity
+       style={styles.backButton}
+       onPress={() => navigation.goBack()}
+       activeOpacity={0.7}
+     >
+       <Text style={styles.backButtonText}>←</Text>
+     </TouchableOpacity>
+     
+     <Animated.Text 
+       style={[
+         styles.headerTitle,
+         { transform: [{ scale: titleScale }] }
+       ]}
+     >
+       <Text style={styles.headerTitleText}>Dispatch Cages </Text>
+       <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
+     </Animated.Text>
+     
+     <View style={styles.headerPlaceholder} />
+   </View>
+   
+   {/* Main content - use conditional rendering instead of ScrollView */}
+   <View style={styles.mainContainer}>
+     <Animated.View 
+       style={{ 
+         opacity: fadeIn,
+         transform: [{ translateY: slideUp }],
+         flex: 1,
+       }}
+     >
+       {!pickedCarrier && renderCarrierSelection()}
+       {pickedCarrier && !dispatchProcess && renderCageScanning()}
+       {pickedCarrier && dispatchProcess && renderDispatchProcess()}
+     </Animated.View>
+   </View>
+
+       {/* Camera Modal */}
+       <CameraModal
+         visible={showCamera}
+         onClose={closeCamera}
+         onImageCaptured={handleImageCaptured}
+         category={categoryName || 'Truck'} // Provide default value
+         type={cameraType || 'transit'} // Provide default value
+         companyCode="OUT"
+         referenceNumber={pickedCarrier || ''}
+   />
+   
+   {/* Signature Pad Modal */}
+   <Modal
+     visible={showSignaturePad}
+     transparent={true}
+     animationType="slide"
+   >
+     <View style={styles.signatureModalContainer}>
+       <View style={styles.signatureModalContent}>
+         <View style={styles.signatureModalHeader}>
+           <Text style={styles.signatureModalTitle}>Driver Signature</Text>
+           <TouchableOpacity 
+             style={styles.signatureCloseButton}
+             onPress={() => setShowSignaturePad(false)}
+           >
+             <MaterialIcons name="close" size={24} color={COLORS.text} />
+           </TouchableOpacity>
+         </View>
+         
+         <SignaturePad
+           onSignatureCapture={handleSignatureCaptured}
+           companyCode="OUT"
+           carrierName={pickedCarrier || ''}
+         />
+       </View>
+     </View>
+   </Modal>
+
+   {/* Barcode Scanner Modal */}
+   <BarcodeScannerModal
+ visible={showScanner}
+ onClose={() => setShowScanner(false)}
+ onBarcodeScanned={(barcode) => {
+   // First close the scanner
+   setShowScanner(false);
+   
+   // Set the cage ID field
+   setCageIdField(barcode);
+   
+   // Process the scanned cage with a small delay to ensure state updates properly
+   setTimeout(() => {
+     if (barcode) {
+       // Check if the barcode is a valid cage
+       if (!openCages.includes(barcode)) {
+         if (cagesToDispatch.includes(barcode)) {
+           playErrorSound();
+           Alert.alert('Error', 'Cage has already been scanned');
+         } else {
+           playErrorSound();
+           Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
+         }
+       } else {
+         // Create new arrays instead of mutating state directly
+         const newOpenCages = [...openCages].filter(id => id !== barcode);
+         const newCagesToDispatch = [...cagesToDispatch, barcode];
+         
+         // Update state with new arrays
+         setOpenCages(newOpenCages);
+         setCagesToDispatch(newCagesToDispatch);
+         playSuccessSound();
+       }
+       // Reset the input field
+       setCageIdField('');
+     }
+   }, 300);
+ }}
+ title="Scan Cage ID"
+/>
+   
+   {/* Loading Overlay */}
+   {(loading || submitting) && (
+     <View style={styles.loadingOverlay}>
+       <View style={styles.loadingBox}>
+         <ActivityIndicator size="large" color={COLORS.primary} />
+         <Text style={styles.loadingOverlayText}>
+           {submitting ? 'Submitting dispatch...' : 'Loading...'}
+         </Text>
+       </View>
+     </View>
+   )}
+ </SafeAreaView>
 );
 };
 
 const styles = StyleSheet.create({
 safeArea: {
-  flex: 1,
-  backgroundColor: COLORS.background,
-  paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+ flex: 1,
+ backgroundColor: COLORS.background,
+ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
 },
 header: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  paddingHorizontal: 16,
-  paddingVertical: 20,
-  backgroundColor: COLORS.background,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ paddingHorizontal: 16,
+ paddingVertical: 20,
+ backgroundColor: COLORS.background,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 backButton: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  alignItems: 'center',
-  justifyContent: 'center',
-  backgroundColor: COLORS.card,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ width: 40,
+ height: 40,
+ borderRadius: 20,
+ alignItems: 'center',
+ justifyContent: 'center',
+ backgroundColor: COLORS.card,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 backButtonText: {
-  fontSize: 24,
-  color: COLORS.primary,
-  fontWeight: '500',
+ fontSize: 24,
+ color: COLORS.primary,
+ fontWeight: '500',
 },
 headerTitle: {
-  flex: 1,
-  textAlign: 'center',
-  paddingHorizontal: 10,
+ flex: 1,
+ textAlign: 'center',
+ paddingHorizontal: 10,
 },
 headerTitleText: {
-  fontSize: 20,
-  fontWeight: '700',
-  color: COLORS.text,
+ fontSize: 20,
+ fontWeight: '700',
+ color: COLORS.text,
 },
 warehouseText: {
-  color: COLORS.primary,
+ color: COLORS.primary,
 },
 headerPlaceholder: {
-  width: 40,
+ width: 40,
 },
 scrollView: {
-  flex: 1,
+ flex: 1,
 },
 scrollContent: {
-  padding: 16,
-  paddingBottom: 30,
-  flexGrow: 1,
+ padding: 16,
+ paddingBottom: 30,
+ flexGrow: 1,
 },
 section: {
-  backgroundColor: COLORS.card,
-  borderRadius: 16,
-  padding: 16,
-  marginBottom: 16,
-  minHeight: 100,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
-    },
-    android: {
-      elevation: 4,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 16,
+ padding: 16,
+ marginBottom: 16,
+ minHeight: 100,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 4 },
+     shadowOpacity: 0.1,
+     shadowRadius: 8,
+   },
+   android: {
+     elevation: 4,
+   },
+ }),
 },
 fullSection: {
-  flex: 1,
+ flex: 1,
 },
 sectionTitle: {
-  fontSize: 18,
-  fontWeight: '700',
-  color: COLORS.text,
-  marginBottom: 16,
-  textAlign: 'center',
+ fontSize: 18,
+ fontWeight: '700',
+ color: COLORS.text,
+ marginBottom: 16,
+ textAlign: 'center',
 },
 loader: {
-  marginVertical: 30,
+ marginVertical: 30,
 },
 pickerContainer: {
-  backgroundColor: COLORS.surface,
-  borderRadius: 12,
-  marginBottom: 16,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 1,
-    },
-  }),
+ backgroundColor: COLORS.surface,
+ borderRadius: 12,
+ marginBottom: 16,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.05,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 1,
+   },
+ }),
 },
 carrierList: {
-  minHeight: 50,
-  width: '100%',
+ minHeight: 50,
+ width: '100%',
 },
 carrierItem: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: 16,
-  borderBottomWidth: 1,
-  borderBottomColor: COLORS.border,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ padding: 16,
+ borderBottomWidth: 1,
+ borderBottomColor: COLORS.border,
 },
 selectedCarrierItem: {
-  backgroundColor: 'rgba(0, 169, 181, 0.1)',
+ backgroundColor: 'rgba(0, 169, 181, 0.1)',
 },
 carrierName: {
-  fontSize: 16,
-  color: COLORS.text,
+ fontSize: 16,
+ color: COLORS.text,
 },
 selectedCarrierName: {
-  fontWeight: '600',
-  color: COLORS.primary,
+ fontWeight: '600',
+ color: COLORS.primary,
 },
 actionButton: {
-  marginTop: 8,
+ marginTop: 8,
 },
 emptyStateContainer: {
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 32,
+ alignItems: 'center',
+ justifyContent: 'center',
+ padding: 32,
 },
 emptyStateIcon: {
-  fontSize: 48,
-  marginBottom: 16,
+ fontSize: 48,
+ marginBottom: 16,
 },
 emptyStateTitle: {
-  fontSize: 18,
-  fontWeight: '700',
-  color: COLORS.text,
-  marginBottom: 8,
-  textAlign: 'center',
+ fontSize: 18,
+ fontWeight: '700',
+ color: COLORS.text,
+ marginBottom: 8,
+ textAlign: 'center',
 },
 emptyStateDescription: {
-  fontSize: 14,
-  color: COLORS.textLight,
-  marginBottom: 24,
-  textAlign: 'center',
+ fontSize: 14,
+ color: COLORS.textLight,
+ marginBottom: 24,
+ textAlign: 'center',
 },
 carrierHeader: {
-  backgroundColor: COLORS.card,
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 16,
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 12,
+ padding: 16,
+ marginBottom: 16,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 carrierHeaderText: {
-  fontSize: 16,
-  color: COLORS.text,
-  flex: 1,
+ fontSize: 16,
+ color: COLORS.text,
+ flex: 1,
 },
 highlightedText: {
-  color: COLORS.primary,
-  fontWeight: '700',
+ color: COLORS.primary,
+ fontWeight: '700',
 },
 changeCarrierButton: {
-  marginLeft: 8,
+ marginLeft: 8,
 },
 scannerSection: {
-  backgroundColor: COLORS.card,
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 16,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 12,
+ padding: 16,
+ marginBottom: 16,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 scanInstructions: {
-  fontSize: 16,
-  color: COLORS.text,
-  marginBottom: 12,
-  textAlign: 'center',
+ fontSize: 16,
+ color: COLORS.text,
+ marginBottom: 12,
+ textAlign: 'center',
 },
 scanInputContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
+ flexDirection: 'row',
+ alignItems: 'center',
 },
 scanInput: {
-  flex: 1,
-  backgroundColor: COLORS.inputBackground,
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  borderRadius: 8,
-  padding: 12,
-  fontSize: 16,
-  color: COLORS.text,
-  marginRight: 8,
+ flex: 1,
+ backgroundColor: COLORS.inputBackground,
+ borderWidth: 1,
+ borderColor: COLORS.border,
+ borderRadius: 8,
+ padding: 12,
+ fontSize: 16,
+ color: COLORS.text,
+ marginRight: 8,
 },
 scanButton: {
-  backgroundColor: COLORS.primary,
-  width: 48,
-  height: 48,
-  borderRadius: 8,
-  alignItems: 'center',
-  justifyContent: 'center',
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ backgroundColor: COLORS.primary,
+ width: 48,
+ height: 48,
+ borderRadius: 8,
+ alignItems: 'center',
+ justifyContent: 'center',
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 cagesContainer: {
-  flexDirection: 'row',
-  marginBottom: 16,
-  
+ flexDirection: 'row',
+ marginBottom: 16,
+ 
 },
 cageListContainer: {
-  flex: 1,
-  backgroundColor: COLORS.card,
-  borderRadius: 12,
-  padding: 12,
-  marginHorizontal: 4,
-  maxHeight: 220, 
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ flex: 1,
+ backgroundColor: COLORS.card,
+ borderRadius: 12,
+ padding: 12,
+ marginHorizontal: 4,
+ maxHeight: 220, 
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 cageList: {
-  height: 150, // Fixed height for the FlatList
+ height: 150, // Fixed height for the FlatList
 },
 cageListTitle: {
-  fontSize: 14,
-  color: COLORS.text,
-  marginBottom: 8,
-  textAlign: 'center',
-  fontWeight: '600',
+ fontSize: 14,
+ color: COLORS.text,
+ marginBottom: 8,
+ textAlign: 'center',
+ fontWeight: '600',
 },
 cageCount: {
-  color: COLORS.primary,
-  fontWeight: '700',
+ color: COLORS.primary,
+ fontWeight: '700',
 },
 cageItemsContainer: {
-  marginTop: 4,
+ marginTop: 4,
 },
 cageItem: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  backgroundColor: COLORS.surface,
-  padding: 10,
-  borderRadius: 8,
-  marginBottom: 6,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ backgroundColor: COLORS.surface,
+ padding: 10,
+ borderRadius: 8,
+ marginBottom: 6,
 },
 cageId: {
-  fontSize: 14,
-  color: COLORS.text,
-  fontWeight: '500',
+ fontSize: 14,
+ color: COLORS.text,
+ fontWeight: '500',
 },
 removeButton: {
-  padding: 4,
+ padding: 4,
 },
 noCagesText: {
-  fontSize: 14,
-  color: COLORS.textLight,
-  textAlign: 'center',
-  fontStyle: 'italic',
-  padding: 16,
+ fontSize: 14,
+ color: COLORS.textLight,
+ textAlign: 'center',
+ fontStyle: 'italic',
+ padding: 16,
 },
 dispatchButton: {
-  backgroundColor: COLORS.primary,
-  marginTop: 8,
+ backgroundColor: COLORS.primary,
+ marginTop: 8,
 },
 summaryCard: {
-  backgroundColor: COLORS.card,
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 16,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 12,
+ padding: 16,
+ marginBottom: 16,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 summaryTitle: {
-  fontSize: 18,
-  fontWeight: '700',
-  color: COLORS.text,
-  marginBottom: 16,
-  textAlign: 'center',
+ fontSize: 18,
+ fontWeight: '700',
+ color: COLORS.text,
+ marginBottom: 16,
+ textAlign: 'center',
 },
 summaryItem: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  paddingVertical: 8,
-  borderBottomWidth: 1,
-  borderBottomColor: COLORS.border,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ paddingVertical: 8,
+ borderBottomWidth: 1,
+ borderBottomColor: COLORS.border,
 },
 summaryLabel: {
-  fontSize: 16,
-  color: COLORS.textLight,
+ fontSize: 16,
+ color: COLORS.textLight,
 },
 summaryValue: {
-  fontSize: 16,
-  color: COLORS.text,
-  fontWeight: '600',
+ fontSize: 16,
+ color: COLORS.text,
+ fontWeight: '600',
 },
 photoGrid: {
-  flexDirection: 'row',
-  marginTop: 16,
+ flexDirection: 'row',
+ marginTop: 16,
 },
 photoContainer: {
-  flex: 1,
-  alignItems: 'center',
-  marginHorizontal: 4,
+ flex: 1,
+ alignItems: 'center',
+ marginHorizontal: 4,
 },
 photoLabel: {
-  fontSize: 14,
-  color: COLORS.textLight,
-  marginBottom: 8,
-  textAlign: 'center',
+ fontSize: 14,
+ color: COLORS.textLight,
+ marginBottom: 8,
+ textAlign: 'center',
 },
 photo: {
-  width: 120,
-  height: 120,
-  borderRadius: 8,
-  borderWidth: 1,
-  borderColor: COLORS.border,
+ width: 120,
+ height: 120,
+ borderRadius: 8,
+ borderWidth: 1,
+ borderColor: COLORS.border,
 },
 photoPlaceholder: {
-  width: 120,
-  height: 120,
-  borderRadius: 8,
-  backgroundColor: COLORS.surface,
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  alignItems: 'center',
-  justifyContent: 'center',
+ width: 120,
+ height: 120,
+ borderRadius: 8,
+ backgroundColor: COLORS.surface,
+ borderWidth: 1,
+ borderColor: COLORS.border,
+ alignItems: 'center',
+ justifyContent: 'center',
 },
 photoPlaceholderText: {
-  fontSize: 12,
-  color: COLORS.textLight,
-  textAlign: 'center',
-  marginTop: 4,
-  padding: 4,
+ fontSize: 12,
+ color: COLORS.textLight,
+ textAlign: 'center',
+ marginTop: 4,
+ padding: 4,
 },
 inputSection: {
-  backgroundColor: COLORS.card,
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 16,
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    },
-    android: {
-      elevation: 2,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 12,
+ padding: 16,
+ marginBottom: 16,
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.1,
+     shadowRadius: 4,
+   },
+   android: {
+     elevation: 2,
+   },
+ }),
 },
 inputLabel: {
-  fontSize: 16,
-  color: COLORS.text,
-  marginBottom: 8,
+ fontSize: 16,
+ color: COLORS.text,
+ marginBottom: 8,
 },
 registrationInput: {
-  backgroundColor: COLORS.inputBackground,
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  borderRadius: 8,
-  padding: 12,
-  fontSize: 16,
-  color: COLORS.text,
-  marginBottom: 16,
+ backgroundColor: COLORS.inputBackground,
+ borderWidth: 1,
+ borderColor: COLORS.border,
+ borderRadius: 8,
+ padding: 12,
+ fontSize: 16,
+ color: COLORS.text,
+ marginBottom: 16,
 },
 submitButton: {
-  backgroundColor: COLORS.primary,
-  marginTop: 16,
+ backgroundColor: COLORS.primary,
+ marginTop: 16,
 },
 // Editable values in summary
 editableValue: {
-  flexDirection: 'row',
-  alignItems: 'center',
+ flexDirection: 'row',
+ alignItems: 'center',
 },
 editButton: {
-  padding: 6,
-  marginLeft: 8,
+ padding: 6,
+ marginLeft: 8,
 },
 inlineSummaryInput: {
-  flex: 1,
-  height: 36,
-  backgroundColor: COLORS.inputBackground,
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  borderRadius: 6,
-  paddingHorizontal: 8,
-  fontSize: 14,
-  color: COLORS.text,
+ flex: 1,
+ height: 36,
+ backgroundColor: COLORS.inputBackground,
+ borderWidth: 1,
+ borderColor: COLORS.border,
+ borderRadius: 6,
+ paddingHorizontal: 8,
+ fontSize: 14,
+ color: COLORS.text,
 },
 retakePhotoButton: {
-  position: 'absolute',
-  bottom: 8,
-  right: 8,
-  backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  width: 32,
-  height: 32,
-  borderRadius: 16,
-  justifyContent: 'center',
-  alignItems: 'center',
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 2,
-    },
-    android: {
-      elevation: 3,
-    },
-  }),
+ position: 'absolute',
+ bottom: 8,
+ right: 8,
+ backgroundColor: 'rgba(0, 0, 0, 0.6)',
+ width: 32,
+ height: 32,
+ borderRadius: 16,
+ justifyContent: 'center',
+ alignItems: 'center',
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 2 },
+     shadowOpacity: 0.3,
+     shadowRadius: 2,
+   },
+   android: {
+     elevation: 3,
+   },
+ }),
 },
 instructionText: {
-  fontSize: 14,
-  color: COLORS.textLight,
-  textAlign: 'center',
-  marginTop: 16,
-  lineHeight: 20,
+ fontSize: 14,
+ color: COLORS.textLight,
+ textAlign: 'center',
+ marginTop: 16,
+ lineHeight: 20,
 },
 loadingOverlay: {
-  ...StyleSheet.absoluteFillObject,
-  backgroundColor: 'rgba(255, 255, 255, 0.8)',
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 1000,
+ ...StyleSheet.absoluteFillObject,
+ backgroundColor: 'rgba(255, 255, 255, 0.8)',
+ justifyContent: 'center',
+ alignItems: 'center',
+ zIndex: 1000,
 },
 loadingBox: {
-  backgroundColor: COLORS.card,
-  borderRadius: 16,
-  padding: 24,
-  alignItems: 'center',
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.2,
-      shadowRadius: 16,
-    },
-    android: {
-      elevation: 10,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ borderRadius: 16,
+ padding: 24,
+ alignItems: 'center',
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 10 },
+     shadowOpacity: 0.2,
+     shadowRadius: 16,
+   },
+   android: {
+     elevation: 10,
+   },
+ }),
 },
 loadingOverlayText: {
-  fontSize: 16,
-  fontWeight: '600',
-  color: COLORS.text,
-  marginTop: 16,
+ fontSize: 16,
+ fontWeight: '600',
+ color: COLORS.text,
+ marginTop: 16,
 },
 signatureModalContainer: {
-  flex: 1,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  justifyContent: 'center',
+ flex: 1,
+ backgroundColor: 'rgba(0, 0, 0, 0.5)',
+ justifyContent: 'center',
 },
 signatureModalContent: {
-  backgroundColor: COLORS.card,
-  margin: 20,
-  borderRadius: 16,
-  overflow: 'hidden',
-  ...Platform.select({
-    ios: {
-      shadowColor: COLORS.shadow,
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.2,
-      shadowRadius: 16,
-    },
-    android: {
-      elevation: 10,
-    },
-  }),
+ backgroundColor: COLORS.card,
+ margin: 20,
+ borderRadius: 16,
+ overflow: 'hidden',
+ ...Platform.select({
+   ios: {
+     shadowColor: COLORS.shadow,
+     shadowOffset: { width: 0, height: 10 },
+     shadowOpacity: 0.2,
+     shadowRadius: 16,
+   },
+   android: {
+     elevation: 10,
+   },
+ }),
 },
 signatureModalHeader: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: 16,
-  borderBottomWidth: 1,
-  borderBottomColor: COLORS.border,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ padding: 16,
+ borderBottomWidth: 1,
+ borderBottomColor: COLORS.border,
 },
 signatureModalTitle: {
-  fontSize: 18,
-  fontWeight: '600',
-  color: COLORS.text,
+ fontSize: 18,
+ fontWeight: '600',
+ color: COLORS.text,
 },
 signatureCloseButton: {
-  padding: 4,
+ padding: 4,
 },
 // Barcode scanner modal styles
 scannerModalContainer: {
-  flex: 1,
-  backgroundColor: COLORS.background,
+ flex: 1,
+ backgroundColor: COLORS.background,
 },
 scannerModalHeader: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  padding: 16,
-  borderBottomWidth: 1,
-  borderBottomColor: COLORS.border,
-  backgroundColor: COLORS.card,
+ flexDirection: 'row',
+ justifyContent: 'space-between',
+ alignItems: 'center',
+ padding: 16,
+ borderBottomWidth: 1,
+ borderBottomColor: COLORS.border,
+ backgroundColor: COLORS.card,
 },
 scannerModalTitle: {
-  fontSize: 18,
-  fontWeight: '600',
-  color: COLORS.text,
+ fontSize: 18,
+ fontWeight: '600',
+ color: COLORS.text,
 },
 scannerCloseButton: {
-  padding: 8,
+ padding: 8,
 },
 scannerHeaderPlaceholder: {
-  width: 40,
+ width: 40,
 },
 scannerPlaceholder: {
-  flex: 1,
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 20,
+ flex: 1,
+ alignItems: 'center',
+ justifyContent: 'center',
+ padding: 20,
 },
 scannerPlaceholderText: {
-  fontSize: 16,
-  color: COLORS.textLight,
-  marginTop: 16,
-  marginBottom: 32,
-  textAlign: 'center',
+ fontSize: 16,
+ color: COLORS.textLight,
+ marginTop: 16,
+ marginBottom: 32,
+ textAlign: 'center',
 },
 simulateScanButton: {
-  width: 200,
+ width: 200,
 },
 emptyMessage: {
-  textAlign: 'center',
-  padding: 20,
-  color: COLORS.textLight,
+ textAlign: 'center',
+ padding: 20,
+ color: COLORS.textLight,
 },
 registrationInputContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
+ flexDirection: 'row',
+ alignItems: 'center',
 },
 registrationFieldInput: {
-  flex: 1,
-  backgroundColor: COLORS.inputBackground,
-  borderWidth: 1,
-  borderColor: COLORS.border,
-  borderRadius: 8,
-  padding: 12,
-  fontSize: 16,
-  color: COLORS.text,
-  marginRight: 8,
+ flex: 1,
+ backgroundColor: COLORS.inputBackground,
+ borderWidth: 1,
+ borderColor: COLORS.border,
+ borderRadius: 8,
+ padding: 12,
+ fontSize: 16,
+ color: COLORS.text,
+ marginRight: 8,
 },
 confirmButton: {
-  backgroundColor: COLORS.primary,
-  paddingVertical: 12,
-  paddingHorizontal: 16,
-  borderRadius: 8,
-  alignItems: 'center',
-  justifyContent: 'center',
+ backgroundColor: COLORS.primary,
+ paddingVertical: 12,
+ paddingHorizontal: 16,
+ borderRadius: 8,
+ alignItems: 'center',
+ justifyContent: 'center',
 },
 confirmButtonText: {
-  color: 'white',
-  fontWeight: '600',
-  fontSize: 14,
+ color: 'white',
+ fontWeight: '600',
+ fontSize: 14,
 },
 validationText: {
-  fontSize: 12,
-  color: COLORS.error,
-  marginTop: 5,
+ fontSize: 12,
+ color: COLORS.error,
+ marginTop: 5,
 },
 disabledButton: {
-  backgroundColor: COLORS.textLight,
+ backgroundColor: COLORS.textLight,
 },
 // Add these styles to the existing styles object
 mainContainer: {
-  flex: 1,
-  padding: 16,
+ flex: 1,
+ padding: 16,
 },
 cageListWrapper: {
-  height: 200, // Fixed height for the list container
-  flex: 1,
+ height: 200, // Fixed height for the list container
+ flex: 1,
 },
 cageItemsScrollView: {
-  maxHeight: 150, // Default max height
+ maxHeight: 150, // Default max height
 },
 cageItemsScrollViewTall: {
-  maxHeight: 200, // Taller when there are many items
+ maxHeight: 200, // Taller when there are many items
+},
+scanningIndicator: {
+ flexDirection: 'row',
+ alignItems: 'center',
+ justifyContent: 'center',
+ padding: 8,
+ marginHorizontal: 16,
+ marginTop: 8,
+ backgroundColor: colors.primary + '10', // 10% opacity
+ borderRadius: 4,
+},
+scanningText: {
+ marginLeft: 8,
+ color: colors.primary,
+ fontSize: 14,
 },
 });
 
-export default DispatchCagesScreen;
+export default DispatchCagesScreen; 

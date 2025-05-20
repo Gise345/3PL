@@ -89,15 +89,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
         ? `${formattedReference}-${type}.jpg` 
         : `${companyCode}-${day}_${time}-${type}.jpg`;
       
-      // Compress the image for upload
-      const manipResult = await ImageManipulator.manipulateAsync(
-        capturedImage,
-        [{ resize: { width: 1080 } }], // Resize to reasonable dimensions
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      // Skip image manipulation for now and use the original image
+      onImageCaptured(capturedImage, imageName);
       
-      // Return the processed image
-      onImageCaptured(manipResult.uri, imageName);
     } catch (error) {
       console.error('Failed to process image:', error);
       Alert.alert('Error', 'Failed to process image. Please try again.');
@@ -105,7 +99,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({
       setProcessing(false);
     }
   };
-
+  
   const retakePicture = () => {
     setCapturedImage(null);
   };

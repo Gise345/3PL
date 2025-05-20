@@ -15,7 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useAppDispatch, useAppSelector } from '../../hooks/useRedux';
 import { logout } from '../../store/slices/authSlice';
-import { setWarehouse, detectWarehouse } from '../../store/slices/settingsSlice';
+import { setWarehouse } from '../../store/slices/settingsSlice';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, shadows, typography, spacing } from '../../utils/theme';
 
@@ -63,18 +63,7 @@ const ModernHomeScreen = () => {
   const [titleScale] = useState(new Animated.Value(1));
   const [titleRotate] = useState(new Animated.Value(0));
   
-  // Setup continuous WiFi detection
-  useEffect(() => {
-    // Initial detection
-    dispatch(detectWarehouse());
-    
-    // Set up interval to check WiFi periodically
-    const interval = setInterval(() => {
-      dispatch(detectWarehouse());
-    }, 30000); // Every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [dispatch]);
+
   
   // Handle warehouse selection
   const handleWarehouseSelect = (selectedWarehouse: string) => {
@@ -426,14 +415,7 @@ const ModernHomeScreen = () => {
                 ? `🟢 Connected to ${ssid || 'Wi-Fi'}` 
                 : `🔴 No network connection`}
             </Text>
-            <Text style={styles.warehouseStatus}>
-              Current warehouse: <Text style={styles.warehouseValue}>{warehouse}</Text>
-              {isWifiConnected && (
-                <TouchableOpacity onPress={() => dispatch(detectWarehouse())}>
-                  <Text style={styles.refreshText}> 🔄</Text>
-                </TouchableOpacity>
-              )}
-            </Text>
+
           </View>
           
           {/* Modern Logout Button */}

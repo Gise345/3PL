@@ -7,9 +7,9 @@ import {
   StyleSheet, 
   ActivityIndicator, 
   Alert,
-  ScrollView,
   TouchableOpacity,
-  FlatList
+  FlatList,
+  SafeAreaView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Card, Button, Input, PhotoCapture, EmptyState } from '../../../components/common';
@@ -203,8 +203,9 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
     );
   }
 
+  // Main change: Use a View instead of ScrollView at the top level
   return (
-    <ScrollView contentContainerStyle={styles.scrollViewContent}>
+    <View style={styles.container}>
       {/* Dropship Clients Selection */}
       {dropshipClientsDiv && (
         <Card style={styles.card}>
@@ -218,7 +219,7 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
             />
           ) : (
             <>
-              {/* Client Picker - replicate the original ListPicker from NativeScript */}
+              {/* Client Picker - now standalone without being inside a ScrollView */}
               <View style={styles.pickerContainer}>
                 <FlatList
                   data={dropshipClientNames}
@@ -240,6 +241,7 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
                     </TouchableOpacity>
                   )}
                   style={styles.pickerList}
+                  nestedScrollEnabled={true}
                 />
               </View>
             </>
@@ -247,9 +249,9 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
         </Card>
       )}
 
-      {/* Selected Client Info */}
+      {/* Rest of the UI components */}
       {selectedDropshipClient && (
-        <>
+        <View style={styles.formContainer}>
           {/* Number of Parcels */}
           {numberOfParcelsDiv && (
             <Card style={styles.card}>
@@ -333,16 +335,19 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
               )}
             </Card>
           )}
-        </>
+        </View>
       )}
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  scrollViewContent: {
-    flexGrow: 1,
+  container: {
+    flex: 1,
     padding: spacing.md,
+  },
+  formContainer: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,

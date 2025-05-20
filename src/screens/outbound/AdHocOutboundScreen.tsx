@@ -15,7 +15,9 @@ import {
   Animated,
   Keyboard,
   TextInput,
-  NativeEventSubscription
+  NativeEventSubscription,
+  AppState,
+  AppStateStatus
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Button, Input, Card, PhotoCapture, EmptyState } from '../../components/common';
@@ -79,12 +81,12 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
   const [manualOrderNumber, setManualOrderNumber] = useState('');
   
   // External barcode scanner states
-  const [barcodeBuffer, setBarcodeBuffer] = useState<string>('');
-  const [lastKeyTime, setLastKeyTime] = useState<number>(0);
+  const [scanBuffer, setScanBuffer] = useState('');
+  const [lastScanTime, setLastScanTime] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
-  const timeoutRef = useRef<number | null>(null);
-  const inputRef = useRef<TextInput>(null);
-  const scanTimeoutDuration = 50; // ms between keystrokes for external scanner
+  const scanTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiddenInputRef = useRef<TextInput>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   // UI state variables
   const [orderNumberDiv, setOrderNumberDiv] = useState(true);
@@ -126,42 +128,46 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
   // Current loadout type
   const loadoutType = loadoutTypes[loadoutTypeIndex];
   
-  // Function to handle key presses from external scanner
-  const handleKeyPress = (e: any) => {
-    const currentTime = new Date().getTime();
+  // Create a function to process external scanner input
+  const processScannerInput = (text: string) => {
+    // Scanner typically sends the full barcode at once or very rapidly
+    const now = Date.now();
     
-    // Show scanning indicator
-    setIsScanning(true);
-    
-    // Ignore certain keys that shouldn't be part of barcode
-    if (e.nativeEvent.key === 'Backspace' || e.nativeEvent.key === 'Enter') {
-      return;
-    }
-    
-    // If this is a new scan sequence or continuing a scan
-    if (currentTime - lastKeyTime < scanTimeoutDuration || barcodeBuffer === '') {
-      // Append character to buffer
-      setBarcodeBuffer(prev => prev + e.nativeEvent.key);
-      setLastKeyTime(currentTime);
+    // If this is a continuation of a scan (characters coming in very quickly)
+    if (now - lastScanTime < 50 || scanBuffer === '') {
+      // Update scan buffer
+      const newBuffer = scanBuffer + text;
+      setScanBuffer(newBuffer);
+      setLastScanTime(now);
       
       // Clear any existing timeout
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
       }
       
-      // Set timeout to process the complete barcode
-      timeoutRef.current = setTimeout(() => {
-        if (barcodeBuffer && barcodeBuffer.length > 0) {
-          console.log('Processing scanned barcode:', barcodeBuffer);
-          addOrderNumber(barcodeBuffer);
-          setBarcodeBuffer('');
-          setIsScanning(false); // Hide scanning indicator
+      // Set a new timeout to process the complete barcode
+      scanTimeoutRef.current = setTimeout(() => {
+        // Process the complete barcode
+        if (newBuffer && newBuffer.length > 3) { // Minimum valid barcode length
+          console.log('Processing external scan:', newBuffer);
+          handleScannedBarcode(newBuffer);
+          setScanBuffer('');
         }
-      }, scanTimeoutDuration + 20);
+      }, 300);
     } else {
-      // Start a new buffer
-      setBarcodeBuffer(e.nativeEvent.key);
-      setLastKeyTime(currentTime);
+      // Start a new scan
+      setScanBuffer(text);
+      setLastScanTime(now);
+    }
+  };
+
+  // Function to handle complete scanned barcode
+  const handleScannedBarcode = (barcode: string) => {
+    // Validate and process the scanned barcode
+    if (barcode.trim()) {
+      console.log('Barcode scanned:', barcode.trim());
+      // This will use the existing logic for handling order numbers
+      addOrderNumber(barcode.trim());
     }
   };
 
@@ -181,45 +187,53 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     ]).start();
   }, []);
   
-  // Handle external scanner input
+  // Handle external scanner and keyboard visibility
   useEffect(() => {
-    let keyboardDidShowListener: NativeEventSubscription;
-    let keyboardDidHideListener: NativeEventSubscription;
+    // Handle keyboard visibility
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
     
-    // Set up event listeners
-    const setupKeyboardListeners = () => {
-      // These listeners help us detect when keyboard is shown/hidden
-      keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-        // Keyboard is shown, could be for manual input
-        // We'll still capture external scanner input
-      });
-      
-      keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-        // Keyboard is hidden, focus on hidden input to capture scanner
-        if (inputRef.current && !showScanner) {
-          inputRef.current.focus();
-        }
-      });
-      
-      // Initially focus the hidden input to capture scanner input
-      setTimeout(() => {
-        if (inputRef.current && !showScanner) {
-          inputRef.current.focus();
-        }
-      }, 500);
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    // Handle app state changes to refocus hidden input when app comes to foreground
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active' && !keyboardVisible) {
+        // Focus hidden input, but don't show keyboard
+        setTimeout(() => {
+          if (hiddenInputRef.current) {
+            hiddenInputRef.current.blur();
+            hiddenInputRef.current.focus();
+          }
+        }, 100);
+      }
     };
-    
-    setupKeyboardListeners();
-    
-    // Clean up event listeners on unmount
+
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+
+    // Focus hidden input on mount, but don't show keyboard
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 300);
+
+    // Clean up
     return () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+      appStateSubscription.remove();
+      
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
       }
     };
-  }, [barcodeBuffer, lastKeyTime, showScanner]);
+  }, []);
 
   // Handle loadout type change
   useEffect(() => {
@@ -240,6 +254,14 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
         setCompletedAddingOrderNumbersBtn(true);
       }
     }
+    
+    // Refocus input after loadout type change
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 100);
   }, [loadoutTypeIndex]);
 
   // Handle carrier name change
@@ -264,26 +286,32 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
 
   // Add order number
   const addOrderNumber = async (orderNumber: string) => {
-    // Check if order number already exists
-    if (orderBarcodes.some(code => code === orderNumber)) {
-      // Order already scanned, show a notification or alert
-      Alert.alert('Duplicate Order', 'This order has already been scanned');
+    // Don't process empty strings
+    if (!orderNumber.trim()) return;
+
+    // Prevent duplicates
+    if (orderBarcodes.includes(orderNumber.trim())) {
+      Alert.alert('Duplicate', 'This order has already been added');
       return;
     }
-    
-    // Validation already handled by the barcode scanner
-    setOrderBarcodes([...orderBarcodes, orderNumber]);
 
-    // Check vendor check completion
     try {
-      await checkVendorCheckComplete(orderNumber);
-    } catch (error) {
-      Alert.alert('Error', `Failed to check vendor completion: ${error}`);
-      return;
-    }
+      // Validate order number with backend if not in test mode
+      if (!isTestMode) {
+        await checkOrderNumber(orderNumber.trim());
+      }
 
-    // When Single Order Collection and a Barcode scanned
-    if (orderBarcodes.length >= 0) {
+      // Add to order barcodes
+      setOrderBarcodes(prev => [...prev, orderNumber.trim()]);
+      
+      // Check vendor completion
+      try {
+        await checkVendorCheckComplete(orderNumber.trim());
+      } catch (err) {
+        console.error('Vendor check error:', err);
+      }
+
+      // Update UI based on loadout type
       if (loadoutTypeIndex === 0) {
         setAddOrderNumberDiv(false);
         setAddOrderNumberBarcodeDiv(false);
@@ -293,10 +321,22 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
         setAddOrderNumberBarcodeDiv(true);
         setCompletedAddingOrderNumbersBtn(true);
       }
+
+      // Clear manual input
+      setManualOrderNumber('');
+      
+      // Refocus hidden input for next scan
+      setTimeout(() => {
+        if (hiddenInputRef.current) {
+          hiddenInputRef.current.blur();
+          hiddenInputRef.current.focus();
+        }
+      }, 300);
+      
+    } catch (error) {
+      console.error('Error processing order number:', error);
+      Alert.alert('Error', 'Invalid order number or connection issue');
     }
-    
-    // Clear the manual order number field
-    setManualOrderNumber('');
   };
 
   // Check vendor check completion
@@ -337,6 +377,14 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
         setCompletedAddingOrderNumbersBtn(false);
       }
     }
+    
+    // Refocus hidden input after removing order
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 100);
   };
 
   // Complete adding order numbers
@@ -345,6 +393,14 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     setCompletedAddingOrderNumbersBtn(false);
     setCarrierDiv(true);
     setAddMoreOrderNumbersBtn(true);
+    
+    // Refocus hidden input
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 100);
   };
 
   // Add more order numbers
@@ -353,6 +409,14 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     setCarrierDiv(false);
     setAddMoreOrderNumbersBtn(false);
     setCompletedAddingOrderNumbersBtn(true);
+    
+    // Refocus hidden input
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 100);
   };
 
   // Handle parcel photo capture
@@ -374,6 +438,14 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     setAddMoreOrderNumbersBtn(false);
     setSummaryDiv(true);
     setSignaturePadDiv(true);
+    
+    // Refocus hidden input
+    setTimeout(() => {
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.blur();
+        hiddenInputRef.current.focus();
+      }
+    }, 100);
   };
 
   // Handle signature captured
@@ -435,6 +507,32 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     }
   };
 
+  // Render hidden input component for external scanner
+  const renderHiddenInput = () => (
+    <TextInput
+      ref={hiddenInputRef}
+      value={scanBuffer}
+      onChangeText={processScannerInput}
+      style={{ 
+        height: 0, 
+        width: 0, 
+        opacity: 0, 
+        position: 'absolute',
+        // Ensure it's positioned way off-screen
+        top: -100,
+        left: -100,
+      }}
+      caretHidden={true}
+      showSoftInputOnFocus={false} // This is key to prevent keyboard from showing
+      autoCorrect={false}
+      spellCheck={false}
+      autoCapitalize="none"
+      // For iOS, these help prevent keyboard
+      keyboardType={Platform.OS === 'ios' ? 'default' : 'visible-password'}
+      contextMenuHidden={true}
+    />
+  );
+
   // Render main content
   const renderContent = () => (
     <ScrollView
@@ -448,16 +546,6 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
           transform: [{ translateY: slideUp }]
         }}
       >
-        {/* Hidden input for external scanner */}
-        <TextInput
-          ref={inputRef}
-          style={{ position: 'absolute', opacity: 0, height: 0 }}
-          autoFocus={true}
-          onKeyPress={handleKeyPress}
-          blurOnSubmit={false}
-          caretHidden={true}
-        />
-        
         {/* External scanner indicator */}
         {isScanning && (
           <View style={styles.scanningIndicator}>
@@ -676,6 +764,8 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
           <View style={styles.headerPlaceholder} />
         </View>
         
+        {renderHiddenInput()}
+        
         <DropshipCollection 
           warehouse={warehouse}
           loadoutType={loadoutType}
@@ -711,6 +801,9 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
         
         <View style={styles.headerPlaceholder} />
       </View>
+      
+      {/* Add the hidden input for external scanner */}
+      {renderHiddenInput()}
       
       {loading ? (
         <View style={styles.loadingOverlay}>
