@@ -1,6 +1,6 @@
 // src/screens/outbound/AdHocOutboundScreen.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -17,7 +17,8 @@ import {
   TextInput,
   NativeEventSubscription,
   AppState,
-  AppStateStatus
+  AppStateStatus,
+  BackHandler
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Button, Input, Card, PhotoCapture, EmptyState } from '../../components/common';
@@ -124,6 +125,8 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     onScan: (barcode) => addOrderNumber(barcode),
     validateBarcode: checkOrderNumber
   });
+
+  
 
   // Current loadout type
   const loadoutType = loadoutTypes[loadoutTypeIndex];
@@ -279,10 +282,130 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
     setParcelPhotoDiv(numberOfParcels !== '' && parseInt(numberOfParcels) > 0);
   }, [numberOfParcels]);
   
-  // Handle back button press
-  const handleBack = () => {
-    navigation.goBack();
-  };
+  const handleBack = useCallback(() => {
+  // Prevent multiple rapid calls
+  if (loading) {
+    return;
+  }
+  
+  // Set loading to prevent further interactions
+  setLoading(true);
+  
+  // Clear all state synchronously first
+  setOrderBarcodes([]);
+  setCompleted(false);
+  setCarrierName('');
+  setDriverReg('');
+  setNumberOfParcels('');
+  setParcelPhoto(null);
+  setParcelPhotoName(null);
+  setSignatureImage(null);
+  setSignatureName(null);
+  setManualOrderNumber('');
+  setScanBuffer('');
+  setIsScanning(false);
+  
+  // Clear UI state
+  setOrderNumberDiv(true);
+  setAddOrderNumberDiv(true);
+  setAddOrderNumberBarcodeDiv(true);
+  setAddMoreOrderNumbersBtn(false);
+  setCompletedAddingOrderNumbersBtn(false);
+  setCarrierDiv(false);
+  setDriverRegDiv(false);
+  setNumberOfParcelsDiv(false);
+  setParcelPhotoDiv(false);
+  setSignaturePadDiv(false);
+  setSummaryDiv(false);
+  
+  // Close any open modals
+  closeScanner();
+  
+  // Clear any pending timeouts
+  if (scanTimeoutRef.current) {
+    clearTimeout(scanTimeoutRef.current);
+  }
+  
+  // Use requestAnimationFrame for smoother navigation
+  requestAnimationFrame(() => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' as never }],
+    });
+  });
+}, [navigation, loading, closeScanner]);
+
+// Add this useEffect for navigation handling (after your existing useEffects)
+useEffect(() => {
+  const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+    // Don't prevent navigation if we're already navigating
+    if (loading) {
+      return;
+    }
+    
+    e.preventDefault();
+    
+    // Clear all state
+    setOrderBarcodes([]);
+    setCompleted(false);
+    setCarrierName('');
+    setDriverReg('');
+    setNumberOfParcels('');
+    setParcelPhoto(null);
+    setParcelPhotoName(null);
+    setSignatureImage(null);
+    setSignatureName(null);
+    setManualOrderNumber('');
+    setScanBuffer('');
+    setIsScanning(false);
+    
+    // Clear UI state
+    setOrderNumberDiv(true);
+    setAddOrderNumberDiv(true);
+    setAddOrderNumberBarcodeDiv(true);
+    setAddMoreOrderNumbersBtn(false);
+    setCompletedAddingOrderNumbersBtn(false);
+    setCarrierDiv(false);
+    setDriverRegDiv(false);
+    setNumberOfParcelsDiv(false);
+    setParcelPhotoDiv(false);
+    setSignaturePadDiv(false);
+    setSummaryDiv(false);
+    
+    // Close any open modals
+    try {
+      closeScanner();
+    } catch (error) {
+      console.log('Scanner already closed');
+    }
+    
+    // Clear any pending timeouts
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+    }
+    
+    // Use requestAnimationFrame for smoother navigation
+    requestAnimationFrame(() => {
+      navigation.dispatch(e.data.action);
+    });
+  });
+  
+  return unsubscribe;
+}, [navigation, loading, closeScanner]);
+
+// Add this useEffect for Android back button handling
+useEffect(() => {
+  const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+    // Only handle back press if not loading or scanning
+    if (!loading && !isScanning) {
+      handleBack();
+      return true; // Prevent default back behavior
+    }
+    return false; // Allow default behavior
+  });
+  
+  return () => backHandler.remove();
+}, [handleBack, loading, isScanning]);
 
   // Add order number
   const addOrderNumber = async (orderNumber: string) => {
@@ -770,6 +893,7 @@ const AdHocOutboundScreen: React.FC<AdHocOutboundScreenProps> = () => {
           warehouse={warehouse}
           loadoutType={loadoutType}
           isTestMode={isTestMode}
+          onBackPress={handleBack}
         />
       </SafeAreaView>
     );

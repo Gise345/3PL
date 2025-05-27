@@ -1,6 +1,6 @@
 // src/screens/outbound/components/DropshipCollection.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -30,12 +30,14 @@ interface DropshipCollectionProps {
     value: string;
   };
   isTestMode: boolean;
+  onBackPress?: () => void;
 }
 
 const DropshipCollection: React.FC<DropshipCollectionProps> = ({
   warehouse,
   loadoutType,
   isTestMode,
+  onBackPress,
 }) => {
   const navigation = useNavigation();
   
@@ -77,6 +79,16 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
     setParcelPhotoDiv(driverReg.length > 5);
   }, [driverReg]);
 
+   const handleBack = useCallback(() => {
+    if (onBackPress) {
+      onBackPress();
+      return;
+    }
+    
+    // Fallback to original logic if no parent handler
+    // ... rest of the handleBack logic from above
+  }, [onBackPress, loading]); 
+  
   // Fetch dropship clients from API
   const fetchDropshipClients = async () => {
     try {
@@ -208,47 +220,41 @@ const DropshipCollection: React.FC<DropshipCollectionProps> = ({
     <View style={styles.container}>
       {/* Dropship Clients Selection */}
       {dropshipClientsDiv && (
-        <Card style={styles.card}>
-          <Text style={styles.sectionTitle}>Select Carrier</Text>
-          
-          {dropshipClients.length === 0 ? (
-            <EmptyState 
-              title="No Dropship Clients" 
-              message="No dropship clients are available at this time."
-              icon="🚚"
-            />
-          ) : (
-            <>
-              {/* Client Picker - now standalone without being inside a ScrollView */}
-              <View style={styles.pickerContainer}>
-                <FlatList
-                  data={dropshipClientNames}
-                  keyExtractor={(item, index) => `${item}-${index}`}
-                  renderItem={({ item, index }) => (
-                    <TouchableOpacity
-                      style={[
-                        styles.pickerItem,
-                        selectedClientIndex === index && styles.pickerItemSelected
-                      ]}
-                      onPress={() => onSelectedIndexChanged(index)}
-                    >
-                      <Text style={[
-                        styles.pickerItemText,
-                        selectedClientIndex === index && styles.pickerItemTextSelected
-                      ]}>
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  style={styles.pickerList}
-                  nestedScrollEnabled={true}
-                />
-              </View>
-            </>
-          )}
-        </Card>
-      )}
-
+  <Card style={styles.card}>
+    <Text style={styles.sectionTitle}>Select Carrier</Text>
+    
+    {dropshipClients.length === 0 ? (
+      <EmptyState 
+        title="No Dropship Clients" 
+        message="No dropship clients are available at this time."
+        icon="🚚"
+      />
+    ) : (
+      <View style={styles.pickerContainer}>
+        {/* Replace FlatList with a simple mapped View */}
+        <View style={styles.pickerList}>
+          {dropshipClientNames.map((item, index) => (
+            <TouchableOpacity
+              key={`${item}-${index}`}
+              style={[
+                styles.pickerItem,
+                selectedClientIndex === index && styles.pickerItemSelected
+              ]}
+              onPress={() => onSelectedIndexChanged(index)}
+            >
+              <Text style={[
+                styles.pickerItemText,
+                selectedClientIndex === index && styles.pickerItemTextSelected
+              ]}>
+                {item}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    )}
+  </Card>
+)}
       {/* Rest of the UI components */}
       {selectedDropshipClient && (
         <View style={styles.formContainer}>
@@ -377,9 +383,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
+     maxHeight: 200,
   },
   pickerList: {
-    maxHeight: 200,
+    
   },
   pickerItem: {
     padding: spacing.md,
