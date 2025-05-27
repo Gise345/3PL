@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { UnknownInboundScreenProps } from '../../navigation/types';
 import { useAppSelector } from '../../hooks/useRedux';
 import { inboundService } from '../../api/inboundService';
 import { ModernButton } from '../../components/common';
+
 
 // Define modern color palette with teal primary color to match other screens
 const COLORS = {
@@ -106,6 +107,40 @@ const ModernUnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navig
     { name: 'Container Pallets', value: 'containerPallets' },
   ];
   
+  const handleBack = useCallback(() => {
+    // Clear any state first
+    setLoading(false);
+    // And any other state you need to clear...
+    
+    // Use a timeout to allow React to process state updates before navigation
+    setTimeout(() => {
+      // Use navigate instead of reset or goBack
+      navigation.navigate('Home');
+    }, 50);
+  }, [navigation]);
+
+  //  this useEffect to handle proper unmounting
+useEffect(() => {
+  // Subscribe to focus events
+  const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+    // Prevent default behavior of leaving the screen
+    e.preventDefault();
+    
+    // Clear state
+    setLoading(false);
+    // Reset any other important state variables here
+    
+    // Continue with navigation after a short delay
+    setTimeout(() => {
+      navigation.dispatch(e.data.action);
+    }, 50);
+  });
+  
+  // Cleanup subscription on unmount
+  return unsubscribe;
+}, [navigation]);
+
+
   // Load companies when component mounts
   useEffect(() => {
     getCompanies();
@@ -457,7 +492,7 @@ const ModernUnknownInboundScreen: React.FC<UnknownInboundScreenProps> = ({ navig
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             activeOpacity={0.7}
           >
             <Text style={styles.backButtonText}>←</Text>
@@ -1185,6 +1220,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     marginHorizontal: -4,
+    
   },
   transitTypeButton: {
     width: '48%',

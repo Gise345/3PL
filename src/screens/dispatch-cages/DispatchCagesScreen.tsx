@@ -11,7 +11,6 @@ ActivityIndicator,
 StatusBar,
 Image,
 ScrollView,
-Animated,
 Platform,
 Dimensions,
 SafeAreaView,
@@ -133,10 +132,6 @@ const [cameraType, setCameraType] = useState<'inbound' | 'transit' | 'product' |
 // Sound players for feedback
 const [sound, setSound] = useState<Audio.Sound | null>(null);
 
-// Animation values
-const [fadeIn] = useState(new Animated.Value(0));
-const [slideUp] = useState(new Animated.Value(30));
-const [titleScale] = useState(new Animated.Value(0.95));
 
 // Set up barcode scanning state from hooks
 const [showScanner, setShowScanner] = useState(false);
@@ -147,8 +142,63 @@ const [isScanning, setIsScanning] = useState(false);
 const timeoutRef = useRef<number | null>(null);
 const invisibleInputRef = useRef<TextInput>(null);
 const scanTimeoutDuration = 50; // ms between keystrokes for external scanner
+const [scanningMode, setScanningMode] = useState(false);
+
+if (!navigation) {
+  return null; // or a loading component
+}
 
 
+
+useEffect(() => {
+  // When a carrier is picked and we're not in dispatch process, 
+  // we're in scanning mode
+  setScanningMode(pickedCarrier !== null && !dispatchProcess);
+}, [pickedCarrier, dispatchProcess]);
+
+// Add this useEffect to ensure focus on invisible input
+useEffect(() => {
+  if (scanningMode) {
+    // Initial focus
+    const initialFocusTimer = setTimeout(() => {
+      if (invisibleInputRef.current) {
+        invisibleInputRef.current.focus();
+        Keyboard.dismiss();
+      }
+    }, 100);
+    
+    // Keep checking and refocusing
+    const focusInterval = setInterval(() => {
+      if (invisibleInputRef.current && !showScanner && !showSignaturePad && scanningMode) {
+        invisibleInputRef.current.focus();
+        Keyboard.dismiss();
+      }
+    }, 200);
+    
+    return () => {
+      clearTimeout(initialFocusTimer);
+      clearInterval(focusInterval);
+    };
+  }
+}, [scanningMode, showScanner, showSignaturePad]);
+
+// Add keyboard listener for ensuring focus
+useEffect(() => {
+  if (scanningMode) {
+    const keyboardDidHideSubscription = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        if (invisibleInputRef.current) {
+          invisibleInputRef.current.focus();
+        }
+      }
+    );
+    
+    return () => {
+      keyboardDidHideSubscription.remove();
+    };
+  }
+}, [scanningMode]);
 
 // Camera functionality
 const { 
@@ -168,6 +218,83 @@ const {
     setParcelPhotoName(imageName);
   }
 });
+
+// Clear more state variables in handleBack function
+const handleBack = useCallback(() => {
+  // Prevent multiple rapid calls
+  if (loading || submitting) {
+    return;
+  }
+  
+  // Set a flag to prevent further interactions
+  setLoading(true);
+  
+  // Clear all state synchronously first
+  setSubmitting(false);
+  setPickedCarrier(null);
+  setOpenCages([]);
+  setCagesToDispatch([]);
+  setDispatchProcess(false);
+  setCageIdField('');
+  setDriverReg('');
+  setParcelPhoto(null);
+  setParcelPhotoName(null);
+  setSignatureImage(null);
+  setSignatureImageName(null);
+  setShowSignaturePad(false);
+  setShowScanner(false);
+  closeCamera(); // Close camera if open
+  
+  // Use requestAnimationFrame instead of setTimeout for better timing
+  requestAnimationFrame(() => {
+    // Navigate back to home
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
+  });
+}, [navigation, loading, submitting, closeCamera]);
+
+// Same expanded cleanup in the useEffect
+useEffect(() => {
+  const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+    // Don't prevent navigation if we're already navigating
+    if (loading || submitting) {
+      return;
+    }
+    
+    e.preventDefault();
+    
+    // Clear all state
+    setSubmitting(false);
+    setPickedCarrier(null);
+    setOpenCages([]);
+    setCagesToDispatch([]);
+    setDispatchProcess(false);
+    setCageIdField('');
+    setDriverReg('');
+    setParcelPhoto(null);
+    setParcelPhotoName(null);
+    setSignatureImage(null);
+    setSignatureImageName(null);
+    setShowSignaturePad(false);
+    setShowScanner(false);
+    
+    // Close any open modals/cameras
+    try {
+      closeCamera();
+    } catch (error) {
+      console.log('Camera already closed');
+    }
+    
+    // Use requestAnimationFrame for smoother navigation
+    requestAnimationFrame(() => {
+      navigation.dispatch(e.data.action);
+    });
+  });
+  
+  return unsubscribe;
+}, [navigation, loading, submitting, closeCamera]);
 
 // Helper to check if a scan appears complete
 const isCompleteScan = (text: string): boolean => {
@@ -213,26 +340,42 @@ useFocusEffect(
   }, [])
 );
 
+// Add helper function to focus the invisible input
+const focusInvisibleInput = useCallback(() => {
+  if (invisibleInputRef.current) {
+    invisibleInputRef.current.focus();
+    Keyboard.dismiss();
+  }
+}, []);
+
 // this useFocusEffect for maintaining focus on the invisible input
 useFocusEffect(
   useCallback(() => {
-    if (pickedCarrier && !dispatchProcess && invisibleInputRef.current) {
-      // Focus invisible input when screen comes into focus
-      setTimeout(() => {
-        if (invisibleInputRef.current) {
-          invisibleInputRef.current.focus();
-          Keyboard.dismiss();
+    if (pickedCarrier && !dispatchProcess) {
+      // Call immediately
+      focusInvisibleInput();
+      
+      // Set up interval to ensure focus remains
+      const focusInterval = setInterval(focusInvisibleInput, 300);
+      
+      // Ensure focus when keyboard hides
+      const keyboardHideListener = Keyboard.addListener('keyboardDidHide', focusInvisibleInput);
+      
+      return () => {
+        clearInterval(focusInterval);
+        keyboardHideListener.remove();
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
         }
-      }, 300);
+      };
     }
     
     return () => {
-      // Cleanup on unfocus
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [pickedCarrier, dispatchProcess])
+  }, [pickedCarrier, dispatchProcess, focusInvisibleInput])
 );
 
 // This useEffect to hide keyboard when screen loads
@@ -242,23 +385,18 @@ useEffect(() => {
 
 // Update the handleKeyPress function to prevent navigation
 const handleKeyPress = (e: any) => {
-  // First prevent any default behavior
-  if (e.preventDefault) {
-    e.preventDefault();
-  }
-  if (e.stopPropagation) {
-    e.stopPropagation();
-  }
+  // Skip if we're not in scanning mode
+  if (!scanningMode) return;
   
   const currentTime = new Date().getTime();
+  const key = e.nativeEvent.key;
   
   // Show scanning indicator
   setIsScanning(true);
   
-  // Explicitly handle Enter and Escape keys that might trigger navigation
-  if (e.nativeEvent.key === 'Enter' || e.nativeEvent.key === 'Escape') {
-    // Just complete the current scan instead of navigating
-    if (barcodeBuffer && barcodeBuffer.length > 0) {
+  // Handle Enter/Return as end of scan
+  if (key === 'Enter' || key === 'Return') {
+    if (barcodeBuffer) {
       processScanBuffer(barcodeBuffer);
     }
     setBarcodeBuffer('');
@@ -266,31 +404,33 @@ const handleKeyPress = (e: any) => {
     return;
   }
   
-  // Ignore certain keys that shouldn't be part of barcode
-  if (e.nativeEvent.key === 'Backspace' || e.nativeEvent.key === 'Tab') {
+  // Skip control and special keys
+  if (key === 'Backspace' || key === 'Tab' || key === 'Escape' || 
+      key === 'Shift' || key === 'Control' || key === 'Alt') {
     return;
   }
   
-  // If this is a new scan sequence or continuing a scan
-  if (currentTime - lastKeyTime < scanTimeoutDuration || barcodeBuffer === '') {
-    // Append character to buffer
-    setBarcodeBuffer(prev => prev + e.nativeEvent.key);
+  // If this is part of an ongoing scan or new scan
+  if (currentTime - lastKeyTime < scanTimeoutDuration || !barcodeBuffer) {
+    // Update buffer with new character
+    const newBuffer = barcodeBuffer + key;
+    setBarcodeBuffer(newBuffer);
     setLastKeyTime(currentTime);
     
-    // Clear any existing timeout
+    // Clear existing timeout
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     
-    // Set timeout to process the complete barcode
+    // Set new timeout to process barcode
     timeoutRef.current = setTimeout(() => {
-      if (barcodeBuffer && barcodeBuffer.length > 0) {
-        processScanBuffer(barcodeBuffer + e.nativeEvent.key);
+      if (newBuffer) {
+        processScanBuffer(newBuffer);
       }
     }, scanTimeoutDuration + 20);
   } else {
-    // Start a new buffer
-    setBarcodeBuffer(e.nativeEvent.key);
+    // Start new scan
+    setBarcodeBuffer(key);
     setLastKeyTime(currentTime);
   }
 };
@@ -299,120 +439,99 @@ const handleKeyPress = (e: any) => {
 const processScanBuffer = (barcode: string) => {
   console.log('Processing scanned barcode:', barcode);
   
-  // Only process barcode if we're on the cage scanning page
-  if (pickedCarrier && !dispatchProcess) {
-    // First update the visible field so user sees what was scanned
-    setCageIdField(barcode);
+  try {
+    // Trim and clean the barcode
+    const cleanBarcode = barcode.trim().toUpperCase();
     
-    // Then process the scan with a little delay to allow UI to update
-    setTimeout(() => {
-      // Check if the barcode is a valid cage
-      if (!openCages.includes(barcode)) {
-        if (cagesToDispatch.includes(barcode)) {
-          console.log("Cage already scanned:", barcode);
-          playErrorSound();
-          Alert.alert('Error', 'Cage has already been scanned');
-        } else {
-          console.log("Cage not found:", barcode);
-          playErrorSound();
-          Alert.alert('Error', `Cage not found under open cages for carrier ${pickedCarrier}`);
-        }
+    if (!cleanBarcode || cleanBarcode.length < 3) {
+      console.log('Barcode too short, ignoring:', cleanBarcode);
+      setIsScanning(false);
+      setBarcodeBuffer('');
+      return;
+    }
+    
+    // Show what was scanned in the field
+    setCageIdField(cleanBarcode);
+    
+    // Process the scan
+    if (!openCages.includes(cleanBarcode)) {
+      if (cagesToDispatch.includes(cleanBarcode)) {
+        console.log("Cage already scanned:", cleanBarcode);
+        playErrorSound();
+        Alert.alert('Already Scanned', 'This cage has already been scanned');
       } else {
-        // Valid cage - move from openCages to cagesToDispatch
-        console.log("Valid cage found, moving to dispatch list:", barcode);
-        
-        // Update state by removing from open cages and adding to dispatch cages
-        setOpenCages(prev => prev.filter(id => id !== barcode));
-        setCagesToDispatch(prev => [...prev, barcode]);
-        
-        playSuccessSound();
+        console.log("Cage not found:", cleanBarcode);
+        playErrorSound();
+        Alert.alert('Not Found', `Cage ${cleanBarcode} not found for carrier ${pickedCarrier}`);
       }
+    } else {
+      // Valid cage - add to dispatch list
+      console.log("Valid cage found:", cleanBarcode);
       
-      // Clear the input field
-      setCageIdField('');
+      // Update state with new arrays
+      setOpenCages(prev => prev.filter(id => id !== cleanBarcode));
+      setCagesToDispatch(prev => [...prev, cleanBarcode]);
+      
+      playSuccessSound();
+    }
+  } catch (error) {
+    console.error('Error processing barcode:', error);
+  } finally {
+    // Always reset the scan state
+    setIsScanning(false);
+    setBarcodeBuffer('');
+    setCageIdField('');
+    
+    // Refocus the invisible input
+    setTimeout(() => {
+      if (invisibleInputRef.current && scanningMode) {
+        invisibleInputRef.current.focus();
+        Keyboard.dismiss();
+      }
     }, 100);
   }
-  
-  setBarcodeBuffer('');
-  setIsScanning(false); // Hide scanning indicator
 };
 
 // Add this useEffect to prevent unintended navigation 
 useEffect(() => {
-  // Prevent back button or other navigation events when scanning is active
   const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-    // If we're actively scanning, prevent navigation
-    if (isScanning) {
-      return true; // Prevents default back behavior
+    // Only handle back press if not in the middle of scanning or loading
+    if (!isScanning && !loading && !submitting) {
+      handleBack();
+      return true; // Prevent default back behavior
     }
-    
-    // Otherwise allow normal back behavior
-    return false;
+    return false; // Allow default behavior
   });
   
   return () => backHandler.remove();
-}, [isScanning]);
+}, [handleBack, isScanning, loading, submitting]);
 
-// Set up animations on component mount
-useEffect(() => {
-  // Animate components on mount
-  Animated.parallel([
-    Animated.timing(fadeIn, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }),
-    Animated.timing(slideUp, {
-      toValue: 0,
-      duration: 600,
-      useNativeDriver: true,
-    }),
-    Animated.spring(titleScale, {
-      toValue: 1,
-      friction: 8,
-      tension: 40,
-      useNativeDriver: true,
-    })
-  ]).start();
-}, []);
+
 
 // Set up keyboard listeners for external scanner - replace existing useEffect entirely
 useEffect(() => {
-  // Only need keyboard listeners when we are in the cage scanning phase
-  let keyboardListener: NativeEventSubscription | null = null;
-  
   // Hide keyboard initially
   Keyboard.dismiss();
   
   if (pickedCarrier && !dispatchProcess) {
-    // Focus invisible input to capture external scanner input
-    setTimeout(() => {
-      if (invisibleInputRef.current && !showScanner) {
-        // Set focus to invisible input without showing keyboard
-        invisibleInputRef.current.focus();
-        Keyboard.dismiss();
-      }
-    }, 300);
-    
-    // Set up a listener to refocus the invisible input when keyboard hides
-    keyboardListener = Keyboard.addListener('keyboardDidHide', () => {
-      if (invisibleInputRef.current && !showScanner) {
-        invisibleInputRef.current.focus();
-      }
-    });
+    // Initial focus
+    focusInvisibleInput();
   }
-  
-  // Cleanup listeners when component unmounts or dependencies change
-  return () => {
-    if (keyboardListener) {
-      keyboardListener.remove();
-    }
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-  };
-}, [pickedCarrier, dispatchProcess, showScanner]);
+}, [pickedCarrier, dispatchProcess, focusInvisibleInput]);
 
+
+useEffect(() => {
+  // This prevents back navigation when scanning is active
+  const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+    // If scanning is active, prevent navigation
+    if (isScanning) {
+      return true; // Prevents default back behavior
+    }
+    return false; // Allow normal back navigation
+  });
+  
+  return () => backHandler.remove();
+}, [isScanning]);
 
 // Load sound effects
 const loadSounds = async () => {
@@ -1058,24 +1177,20 @@ return (
   
     {pickedCarrier && !dispatchProcess && (
       <>
-        <TextInput
-          ref={invisibleInputRef}
-          style={{ position: 'absolute', opacity: 0, height: 0, width: 0 }}
-          autoFocus={true}
-          onKeyPress={handleKeyPress}
-          blurOnSubmit={false}
-          caretHidden={true}
-          showSoftInputOnFocus={false}
-          onBlur={() => {
-            // Refocus when input loses focus
-            setTimeout(() => {
-              if (invisibleInputRef.current && !showScanner) {
-                invisibleInputRef.current.focus();
-                Keyboard.dismiss();
-              }
-            }, 50);
-          }}
-        />
+        {/* Invisible input for external scanner */}
+          {scanningMode && (
+            <TextInput
+              ref={invisibleInputRef}
+              style={{ position: 'absolute', height: 0, width: 0, opacity: 0 }}
+              onKeyPress={handleKeyPress}
+              autoCapitalize="characters"
+              blurOnSubmit={false}
+              autoCorrect={false}
+              caretHidden={true}
+              autoFocus={true}
+              showSoftInputOnFocus={false}
+            />
+          )}
         
         {/* External scanner indicator */}
         {isScanning && (
@@ -1091,38 +1206,27 @@ return (
    <View style={styles.header}>
      <TouchableOpacity
        style={styles.backButton}
-       onPress={() => navigation.goBack()}
+       onPress={handleBack}
        activeOpacity={0.7}
+        disabled={loading || submitting} // Disable when loading
      >
-       <Text style={styles.backButtonText}>←</Text>
+       <Text style={[styles.backButtonText, (loading || submitting) && { opacity: 0.5 } ]}>←</Text>
      </TouchableOpacity>
-     
-     <Animated.Text 
-       style={[
-         styles.headerTitle,
-         { transform: [{ scale: titleScale }] }
-       ]}
-     >
+
+
        <Text style={styles.headerTitleText}>Dispatch Cages </Text>
        <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
-     </Animated.Text>
      
      <View style={styles.headerPlaceholder} />
    </View>
    
    {/* Main content - use conditional rendering instead of ScrollView */}
    <View style={styles.mainContainer}>
-     <Animated.View 
-       style={{ 
-         opacity: fadeIn,
-         transform: [{ translateY: slideUp }],
-         flex: 1,
-       }}
-     >
+    
        {!pickedCarrier && renderCarrierSelection()}
        {pickedCarrier && !dispatchProcess && renderCageScanning()}
        {pickedCarrier && dispatchProcess && renderDispatchProcess()}
-     </Animated.View>
+ 
    </View>
 
        {/* Camera Modal */}

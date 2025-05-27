@@ -482,12 +482,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     marginBottom: 2,
   },
-  headerTitleText: {
+  headerTitleText: { 
     fontSize: 30,
     fontWeight: '800',
     color: COLORS.primary,
     letterSpacing: 0.5,
-    textShadowColor: 'rgba(0, 169, 181, 0.3)', // Update to match teal color
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 5,
   },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -24,7 +24,11 @@ import { BarcodeScannerModal } from '../../components/common/barcode';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 
+// Define the typed navigation prop
+type ScanToCageScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // Define the Operator interface
 interface Operator {
@@ -34,13 +38,9 @@ interface Operator {
 }
 
 const ScanToCageScreen: React.FC = () => {
-  // Animation values
-  const [fadeIn] = useState(new Animated.Value(0));
-  const [slideUp] = useState(new Animated.Value(30));
-  const [titleScale] = useState(new Animated.Value(0.95));
-
+  
   // State
-  const navigation = useNavigation();
+  const navigation = useNavigation<ScanToCageScreenNavigationProp>();
   const [loading, setLoading] = useState(false);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [filteredOperators, setFilteredOperators] = useState<Operator[]>([]);
@@ -65,36 +65,55 @@ const ScanToCageScreen: React.FC = () => {
   // Get warehouse from Redux store
   const { warehouse } = useAppSelector(state => state.settings);
   
-  // Set up animations on component mount
+  
   useEffect(() => {
-    // Animate components on mount
-    Animated.parallel([
-      Animated.timing(fadeIn, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideUp, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(titleScale, {
-        toValue: 1,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      })
-    ]).start();
+    // Subscribe to focus events
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+      
+      // Clear state
+      setOperators([]);
+      setFilteredOperators([]);
+      setSearchOperator('');
+      setSelectedOperator(null);
+      setTrackingNumber('');
+      setCageId('');
+      setOrderDetails(null);
+      setLoadedTrackingNumber(null);
+      setError(null);
+      setSuccess(null);
+      setLoading(false);
+      
+      // Continue with navigation after a short delay
+      setTimeout(() => {
+        navigation.dispatch(e.data.action);
+      }, 50);
+    });
     
-    // Load sounds
-    loadSounds();
+    // Cleanup subscription on unmount
+    return unsubscribe;
+  }, [navigation]);
+  
+  const handleBack = useCallback(() => {
+    // Clear state first
+    setOperators([]);
+    setFilteredOperators([]);
+    setSearchOperator('');
+    setSelectedOperator(null);
+    setTrackingNumber('');
+    setCageId('');
+    setOrderDetails(null);
+    setLoadedTrackingNumber(null);
+    setError(null);
+    setSuccess(null);
+    setLoading(false);
     
-    return () => {
-      // Cleanup
-      unloadSounds();
-    };
-  }, []);
+    // Use a timeout to allow React to process state updates before navigation
+    setTimeout(() => {
+      navigation.navigate('Home');
+    }, 50);
+  }, [navigation]);
   
   // Load operators on component mount
   useEffect(() => {
@@ -332,74 +351,63 @@ const ScanToCageScreen: React.FC = () => {
   };
   
   // Render operator selection screen
-  const renderOperatorSelection = () => (
-    <Animated.View 
-      style={{ 
-        opacity: fadeIn,
-        transform: [{ translateY: slideUp }],
-        flex: 1,
-      }}
-    >
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Select Operator</Text>
-        
-        <View style={styles.searchContainer}>
-          <View style={styles.searchInputContainer}>
-            <MaterialIcons name="search" size={24} color={colors.textLight} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              value={searchOperator}
-              onChangeText={setSearchOperator}
-              placeholder="Search operators..."
-              placeholderTextColor={colors.textLight}
-            />
-          </View>
-        </View>
-        
-        {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
-        ) : filteredOperators.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.emptyStateIcon}>🔍</Text>
-            <Text style={styles.emptyStateTitle}>
-              {searchOperator ? `No operators matching "${searchOperator}"` : "No operators available"}
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredOperators}
-            keyExtractor={item => item.id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={styles.operatorItem}
-                onPress={() => handleSelectOperator(item)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.operatorCard}>
-                  <Text style={styles.operatorName}>
-                    {item.operator_first_name} {item.operator_last_name}
-                  </Text>
-                  <MaterialIcons name="chevron-right" size={24} color={colors.primary} />
-                </View>
-              </TouchableOpacity>
-            )}
-            contentContainerStyle={styles.listContent}
+  // Update the renderOperatorSelection function
+const renderOperatorSelection = () => (
+  <View  >
+    <View style={styles.sectionCard}>
+      <Text style={styles.sectionTitle}>Select Operator</Text>
+      
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <MaterialIcons name="search" size={24} color={colors.textLight} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchOperator}
+            onChangeText={setSearchOperator}
+            placeholder="Search operators..."
+            placeholderTextColor={colors.textLight}
           />
-        )}
+        </View>
       </View>
-    </Animated.View>
-  );
+      
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
+      ) : filteredOperators.length === 0 ? (
+        <View style={styles.emptyStateContainer}>
+          <Text style={styles.emptyStateIcon}>🔍</Text>
+          <Text style={styles.emptyStateTitle}>
+            {searchOperator ? `No operators matching "${searchOperator}"` : "No operators available"}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredOperators}
+          keyExtractor={item => item.id.toString()}
+          renderItem={({ item }) => (
+            <TouchableOpacity 
+              style={styles.operatorItem}
+              onPress={() => handleSelectOperator(item)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.operatorCard}>
+                <Text style={styles.operatorName}>
+                  {item.operator_first_name} {item.operator_last_name}
+                </Text>
+                <MaterialIcons name="chevron-right" size={24} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.listContent}
+        />
+      )}
+    </View>
+  </View>
+);
   
   // Render main scan to cage form
   const renderScanToCageForm = () => (
-    <Animated.View 
-      style={{ 
-        opacity: fadeIn,
-        transform: [{ translateY: slideUp }],
-        flex: 1,
-      }}
-    >
-      {/* Selected Operator */}
+    <ScrollView >
+            {/* Selected Operator */}
       <View style={styles.operatorHeader}>
         <View style={styles.selectedOperatorContent}>
           <View style={styles.operatorInfoRow}>
@@ -561,7 +569,7 @@ const ScanToCageScreen: React.FC = () => {
           </>
         )}
       </TouchableOpacity>
-    </Animated.View>
+    </ScrollView>
   );
   
   return (
@@ -572,35 +580,28 @@ const ScanToCageScreen: React.FC = () => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           activeOpacity={0.7}
         >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         
-        <Animated.Text 
+        <Text 
           style={[
             styles.headerTitle,
-            { transform: [{ scale: titleScale }] }
           ]}
         >
           <Text style={styles.headerTitleText}>Scan to Cage </Text>
           <Text style={[styles.headerTitleText, styles.warehouseText]}>({warehouse})</Text>
-        </Animated.Text>
+        </Text>
         
         <View style={styles.headerPlaceholder} />
       </View>
       
       {/* Main Content */}
-      <ScrollView 
-  style={styles.scrollView}
-  contentContainerStyle={styles.contentContainer}
-  keyboardShouldPersistTaps="handled"
->
-  <View style={styles.container}>
-    {selectedOperator ? renderScanToCageForm() : renderOperatorSelection()}
-  </View>
-</ScrollView>
+      <View style={[styles.scrollView, styles.container]}>
+        {selectedOperator ? renderScanToCageForm() : renderOperatorSelection()}
+      </View>
       
       {/* Barcode Scanner Modal */}
       <BarcodeScannerModal
